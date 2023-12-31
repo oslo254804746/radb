@@ -1,0 +1,22 @@
+[package]
+name = "radb"
+version = "0.1.0"
+edition = "2021"
+authors = ["OKIAAAA"]
+published = "2023-12-31"
+readme = "README.md"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.77"
+chrono = "0.4.31"
+which = "5.0.0"
+tempfile = "3.2.0"
+image = "0.24.7"
+regex = "1.10.2"
+reqwest = { version = "0.11.23", features = ["blocking"] }
+md5 = "0.7.0"
+tracing-subscriber = "0.3.18"
+log = "0.4.20"
+tracing = "0.1.40"
