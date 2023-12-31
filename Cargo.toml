@@ -1,6 +1,6 @@
 [package]
 name = "radb"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["OKIAAAA"]
 published = "2023-12-31"
