@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 use chrono::Utc;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 #[derive(Debug)]
 pub struct FileInfo {
@@ -24,7 +24,7 @@ pub fn parse_file_info<T: ToString>(data: Vec<u8>, path: T) -> Result<FileInfo> 
     mtime = u32::from_le_bytes(mtime_bytes.try_into().unwrap());
     mdtime = Some(
         chrono::DateTime::<Utc>::from_timestamp(mtime as i64, 0)
-            .ok_or(anyhow::Error::msg("Parse Datetime Error"))?,
+            .ok_or(anyhow!("Parse Datetime Error"))?,
     );
     Ok(FileInfo::new(mode, size, mtime, mdtime, path.to_string()))
 }

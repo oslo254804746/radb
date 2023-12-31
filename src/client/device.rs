@@ -264,7 +264,7 @@ impl BaseDevice {
         let local = format!("tcp:{}", local_port);
         match self.forward(&local, &remote, false) {
             Ok(_) => Ok(local_port),
-            Err(_) => Err(anyhow::Error::msg("失败")),
+            Err(_) => Err(anyhow!("Failed To Forward Port")),
         }
     }
 
@@ -308,7 +308,7 @@ impl BaseDevice {
             let output = cmd.output().expect("failed to execute process");
             return Ok(String::from_utf8_lossy(&output.stdout).parse()?);
         };
-        Err(anyhow::Error::msg("adb not found"))
+        Err(anyhow!("adb not found"))
     }
 
     pub fn push(&mut self, local: &str, remote: &str) -> Result<()> {
@@ -316,7 +316,7 @@ impl BaseDevice {
             info!("push {} to {} success", local, remote);
             return Ok(());
         }
-        Err(anyhow::Error::msg("push error"))
+        Err(anyhow!("push error"))
     }
 
     pub fn create_connection<T: Display>(
@@ -445,7 +445,7 @@ impl BaseDevice {
         if let Some(captures) = re.captures(&result) {
             return Ok(captures.get(1).unwrap().as_str().to_string());
         }
-        Err(anyhow::Error::msg("fail to parse wlan ip"))
+        Err(anyhow!("fail to parse wlan ip"))
     }
 
     pub fn uninstall(&mut self, package_name: &str) -> Result<String> {
@@ -488,7 +488,7 @@ impl BaseDevice {
                 fd.write_all(&buffer)?;
                 let target_path = temp_dir
                     .to_str()
-                    .ok_or(anyhow::Error::msg("fail to get path"))?;
+                    .ok_or(anyhow!("fail to get path"))?;
                 info!(
                     "Save Http/s file to  <{:#?}> => dst: <{:#?}>",
                     &path_or_url, &target_path
@@ -511,14 +511,14 @@ impl BaseDevice {
             info!("Install Apk Successed >> <{:#?}>", &resp);
             return Ok(());
         }
-        Err(anyhow::Error::msg("fail to install apk"))
+        Err(anyhow!("fail to install apk"))
     }
 
     pub fn install_remote(&mut self, path: &str, clean: bool) -> Result<String> {
         let args = ["pm", "install", "-r", "-t", path];
         let output = self.shell(&args)?;
         if !output.contains("Success") {
-            return Err(anyhow::Error::msg("fail to install"));
+            return Err(anyhow!("fail to install"));
         };
         if clean {
             self.shell(&["rm", path])?;
@@ -687,7 +687,7 @@ impl BaseDevice {
             let current_data = conn.read(12)?;
             return Ok(parse_file_info(current_data, path)?);
         };
-        Err(anyhow::Error::msg("stat error"))
+        Err(anyhow!("stat error"))
     }
 
     pub fn iter_directory(&mut self, path: & str) -> Result<impl Iterator<Item = FileInfo>> {
@@ -752,7 +752,7 @@ impl BaseDevice {
                 };
             }));
         }
-        Err(anyhow::Error::msg("iter_content error"))
+        Err(anyhow!("iter_content error"))
     }
 
     pub fn read_text(&mut self, path: & str) -> Result<String> {
