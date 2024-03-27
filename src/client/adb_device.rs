@@ -767,10 +767,10 @@ impl AdbDevice {
     }
     pub fn logcat(& mut self, flush_exist: bool, command: Option<&str>, lock: Arc<RwLock<bool>>) -> anyhow::Result<impl Iterator<Item = String>> {
 
-        if (flush_exist) {
+        if flush_exist {
             self.shell(&["logcat", "-c"])?;
         }
-        let mut conn = self.shell_stream(&["logcat", "-v", "time"])?;
+        let conn = self.shell_stream(&["logcat", "-v", "time"])?;
         return Ok(std::iter::from_fn(move || {
                 let mut bufreader = BufReader::new(&conn.stream);
 
