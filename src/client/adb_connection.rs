@@ -31,7 +31,7 @@ impl AdbConnection {
         if sock_addr.is_none() & timeout.is_none(){
             return Self::default()
         }else{
-            let mut config = match sock_addr {
+            let config = match sock_addr {
                 Some(sock_addr) => AdbSocketConfig::new(sock_addr, timeout),
                 _ => AdbSocketConfig::new(SocketAddr::new("127.0.0.1:5037".parse::<IpAddr>().unwrap(), 5037), timeout)
             };

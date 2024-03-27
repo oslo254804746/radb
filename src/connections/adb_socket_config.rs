@@ -1,13 +1,13 @@
 use crate::utils::start_adb_server;
 use log::error;
-use std::net::{IpAddr, SocketAddr, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::time::Duration;
 use anyhow::Context;
 
 const DEFAULT_ADB_PORT: u16 = 5037;
 const DEFAULT_ADB_TIMEOUT: u64 = 3;
 
-const DEFAULT_ADB_HOST: &str = "127.0.0.1";
+const DEFAULT_ADB_HOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 
 ///
 /// Adb Socket相关配置
@@ -24,7 +24,7 @@ impl Default for AdbSocketConfig {
     fn default() -> Self {
         AdbSocketConfig {
             addr: SocketAddr::new(
-                DEFAULT_ADB_HOST.parse::<IpAddr>().unwrap(),
+                IpAddr::V4(DEFAULT_ADB_HOST),
                 DEFAULT_ADB_PORT,
             ),
             timeout: DEFAULT_ADB_TIMEOUT,
