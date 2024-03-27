@@ -1,7 +1,7 @@
-use crate::beans::app_info::AppInfo;
+use crate::beans::AppInfo;
 use crate::beans::device_info::AdbDeviceInfo;
 use crate::beans::file_info::{parse_file_info, FileInfo};
-use crate::beans::forward_item::ForwardIterm;
+use crate::beans::forward_item::ForwardItem;
 use crate::beans::net_info::NetworkType;
 use crate::client::adb_connection::AdbConnection;
 use crate::connections::adb_protocol::AdbProtocolStreamHandler;
@@ -278,7 +278,7 @@ impl AdbDevice {
         Err(anyhow!("Failed To Forward Port"))
     }
 
-    pub fn forward_list(&mut self) -> anyhow::Result<Vec<ForwardIterm>> {
+    pub fn forward_list(&mut self) -> anyhow::Result<Vec<ForwardItem>> {
         let mut connection = self.open_transport(Some("list-forward"))?;
         let content = connection.read_string_block()?;
         let mut forward_iterms = vec![];
@@ -287,7 +287,7 @@ impl AdbDevice {
             if current_parts.len() == 3 {
                 let (serial, local, remote) =
                     (current_parts[0], current_parts[1], current_parts[2]);
-                forward_iterms.push(ForwardIterm::new(serial, local, remote))
+                forward_iterms.push(ForwardItem::new(serial, local, remote))
             }
         }
         Ok(forward_iterms)
@@ -767,10 +767,10 @@ impl AdbDevice {
     }
     pub fn logcat(& mut self, flush_exist: bool, command: Option<&str>, lock: Arc<RwLock<bool>>) -> anyhow::Result<impl Iterator<Item = String>> {
 
-        if (flush_exist) {
+        if flush_exist {
             self.shell(&["logcat", "-c"])?;
         }
-        let mut conn = self.shell_stream(&["logcat", "-v", "time"])?;
+        let conn = self.shell_stream(&["logcat", "-v", "time"])?;
         return Ok(std::iter::from_fn(move || {
                 let mut bufreader = BufReader::new(&conn.stream);
 

@@ -1,8 +1,8 @@
 
 #[cfg(test)]
 mod test_adb{
-    use radb::client::adb_connection::AdbConnection;
-    use radb::client::adb_device::AdbDevice;
+    use radb::client::AdbConnection;
+    use radb::client::AdbDevice;
 
     #[test]
     fn test_adb_list_devices(){
