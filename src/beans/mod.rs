@@ -7,5 +7,5 @@ pub(crate) mod net_info;
 pub use app_info::AppInfo;
 pub use device_info::AdbDeviceInfo;
 pub use file_info::{FileInfo,parse_file_info};
-pub use forward_item::ForwardIterm;
+pub use forward_item::ForwardItem;
 pub use net_info::NetworkType;
