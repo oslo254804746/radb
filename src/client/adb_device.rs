@@ -1,4 +1,4 @@
-use crate::beans::app_info::AppInfo;
+use crate::beans::AppInfo;
 use crate::beans::device_info::AdbDeviceInfo;
 use crate::beans::file_info::{parse_file_info, FileInfo};
 use crate::beans::forward_item::ForwardIterm;

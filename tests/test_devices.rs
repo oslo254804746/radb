@@ -7,9 +7,9 @@ mod test_devices{
     use std::time::Duration;
     use chrono::{DateTime, TimeZone, Utc};
     use log::info;
-    use radb::beans::app_info::AppInfo;
-    use radb::beans::file_info::FileInfo;
-    use radb::client::adb_device::AdbDevice;
+    use radb::beans::AppInfo;
+    use radb::beans::FileInfo;
+    use radb::client::AdbDevice;
     use radb::utils::init_logger;
 
 
