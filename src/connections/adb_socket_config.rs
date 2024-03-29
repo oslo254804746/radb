@@ -1,8 +1,8 @@
 use crate::utils::start_adb_server;
+use anyhow::Context;
 use log::error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::time::Duration;
-use anyhow::Context;
 
 const DEFAULT_ADB_PORT: u16 = 5037;
 const DEFAULT_ADB_TIMEOUT: u64 = 3;
@@ -23,17 +23,13 @@ pub struct AdbSocketConfig {
 impl Default for AdbSocketConfig {
     fn default() -> Self {
         AdbSocketConfig {
-            addr: SocketAddr::new(
-                IpAddr::V4(DEFAULT_ADB_HOST),
-                DEFAULT_ADB_PORT,
-            ),
+            addr: SocketAddr::new(IpAddr::V4(DEFAULT_ADB_HOST), DEFAULT_ADB_PORT),
             timeout: DEFAULT_ADB_TIMEOUT,
         }
     }
 }
 
 impl AdbSocketConfig {
-
     /**
      * 创建一个新的ADB客户端实例。
      *
@@ -54,7 +50,6 @@ impl AdbSocketConfig {
     pub fn set_timeout(&mut self, timeout: u64) {
         self.timeout = timeout;
     }
-
 
     ///
     /// 使用配置连接到Adb Server
@@ -81,7 +76,8 @@ impl AdbSocketConfig {
                     e
                 );
                 start_adb_server();
-                self.create_socket().context("Failed to create TCP stream after starting ADB server")?
+                self.create_socket()
+                    .context("Failed to create TCP stream after starting ADB server")?
             }
         };
         stream.set_read_timeout(Some(Duration::new(self.timeout, 0)))?;
