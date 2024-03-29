@@ -6,7 +6,7 @@ use std::net::{IpAddr, SocketAddr, TcpStream};
 
 /// AdbConnection 结构体定义了与 ADB 服务器的连接。
 pub struct AdbConnection {
-    pub stream: TcpStream, // TCP 流，用于与 ADB 服务器进行通信。
+    pub stream: TcpStream,       // TCP 流，用于与 ADB 服务器进行通信。
     pub config: AdbSocketConfig, // ADB 插口配置，包含连接的地址和超时设置。
 }
 
@@ -18,7 +18,6 @@ impl AdbProtocolStreamHandler for AdbConnection {
 }
 
 impl AdbConnection {
-
     /// 创建一个新的 AdbConnection 实例。
     ///
     /// # 参数
@@ -27,16 +26,19 @@ impl AdbConnection {
     ///
     /// # 返回值
     /// 返回一个建立好的 AdbConnection 实例，如果无法建立连接，则返回错误。
-    pub fn new(sock_addr: Option<SocketAddr>, timeout: Option<u64>) -> anyhow::Result<Self>{
-        if sock_addr.is_none() & timeout.is_none(){
-            return Self::default()
-        }else{
+    pub fn new(sock_addr: Option<SocketAddr>, timeout: Option<u64>) -> anyhow::Result<Self> {
+        if sock_addr.is_none() & timeout.is_none() {
+            return Self::default();
+        } else {
             let config = match sock_addr {
                 Some(sock_addr) => AdbSocketConfig::new(sock_addr, timeout),
-                _ => AdbSocketConfig::new(SocketAddr::new("127.0.0.1:5037".parse::<IpAddr>().unwrap(), 5037), timeout)
+                _ => AdbSocketConfig::new(
+                    SocketAddr::new("127.0.0.1:5037".parse::<IpAddr>().unwrap(), 5037),
+                    timeout,
+                ),
             };
-            let stream =  config.safe_connect()?;
-            Ok(Self{stream, config})
+            let stream = config.safe_connect()?;
+            Ok(Self { stream, config })
         }
     }
 
@@ -70,10 +72,7 @@ impl AdbConnection {
         Ok(devices)
     }
 
-    pub fn send_cmd_then_check_okay(
-        &mut self,
-        command: &str,
-    ) -> anyhow::Result<()> {
+    pub fn send_cmd_then_check_okay(&mut self, command: &str) -> anyhow::Result<()> {
         self.send_command(command)?;
         self.check_okay()?;
 
@@ -97,7 +96,7 @@ impl AdbConnection {
     /// 返回服务器的版本号字符串，如果获取失败，则返回错误。
     pub fn server_version(&mut self) -> anyhow::Result<String> {
         let command = "host:version";
-        self.send_cmd_then_check_okay(command, )?;
+        self.send_cmd_then_check_okay(command)?;
         let version_string = self.read_string_block()?;
         let version = usize::from_str_radix(&version_string, 16)?;
         Ok(version.to_string())
@@ -109,7 +108,7 @@ impl AdbConnection {
     /// 如果关闭成功，则返回空结果，否则返回错误。
     pub fn server_kill(&mut self) -> anyhow::Result<()> {
         let command = "host:kill";
-        self.send_cmd_then_check_okay(command, )?;
+        self.send_cmd_then_check_okay(command)?;
         Ok(())
     }
 
@@ -122,7 +121,7 @@ impl AdbConnection {
     /// 返回连接结果的字符串表示，如果连接失败，则返回错误。
     pub fn connect_device(&mut self, serial: &str) -> anyhow::Result<String> {
         let command = format!("host:connect:{}", serial);
-        self.send_cmd_then_check_okay(&command, )?;
+        self.send_cmd_then_check_okay(&command)?;
         let result = self.read_string_block()?;
         Ok(result)
     }
@@ -139,7 +138,7 @@ impl AdbConnection {
             return Err(anyhow!("serial is empty"));
         }
         let command = format!("host:disconnect:{}", serial);
-        self.send_cmd_then_check_okay(&command, )?;
+        self.send_cmd_then_check_okay(&command)?;
         Ok(self.read_string_block()?)
     }
 
@@ -153,9 +152,7 @@ impl AdbConnection {
     pub fn device(&mut self, serial: &str) -> AdbDevice {
         AdbDevice::new_device(&serial, self.config.clone())
     }
-
 }
-
 
 #[test]
 fn test_adb() {

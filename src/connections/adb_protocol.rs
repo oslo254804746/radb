@@ -7,14 +7,12 @@ use std::net::TcpStream;
 // AdbProtocolRespDataType 定义了ADB协议响应数据类型的枚举
 #[derive(Debug)]
 pub enum AdbProtocolRespDataType {
-    OKAY,      // 操作成功
-    FAIL,      // 操作失败
-    DATA,      // 响应数据
-    DONE,      // 操作完成
-    UNKNOWN,    // 未知类型
+    OKAY,    // 操作成功
+    FAIL,    // 操作失败
+    DATA,    // 响应数据
+    DONE,    // 操作完成
+    UNKNOWN, // 未知类型
 }
-
-
 
 impl AdbProtocolRespDataType {
     /// 将 AdbProtocolRespDataType 枚举值转换为对应的静态字符串。
@@ -26,14 +24,13 @@ impl AdbProtocolRespDataType {
     /// 返回一个静态字符串，对应于枚举值的含义。如果枚举值未匹配到任何已知类型，则返回空字符串。
     pub fn as_str(&self) -> &'static str {
         match self {
-            AdbProtocolRespDataType::OKAY => "OKAY",  // 操作成功
-            AdbProtocolRespDataType::FAIL => "FAIL",  // 操作失败
-            AdbProtocolRespDataType::DATA => "DATA",  // 包含数据的响应
-            AdbProtocolRespDataType::DONE => "DONE",  // 操作完成
-            _ => "",  // 未知或未定义的枚举值
+            AdbProtocolRespDataType::OKAY => "OKAY", // 操作成功
+            AdbProtocolRespDataType::FAIL => "FAIL", // 操作失败
+            AdbProtocolRespDataType::DATA => "DATA", // 包含数据的响应
+            AdbProtocolRespDataType::DONE => "DONE", // 操作完成
+            _ => "",                                 // 未知或未定义的枚举值
         }
     }
-
 }
 
 // 单元测试，确保所有枚举值都被正确处理
@@ -50,7 +47,6 @@ mod tests {
         assert_eq!(AdbProtocolRespDataType::UNKNOWN.as_str(), "");
     }
 }
-
 
 /// AdbProtocolStreamHandler trait定义了ADB协议流处理的接口。
 pub trait AdbProtocolStreamHandler {
@@ -127,14 +123,14 @@ pub trait AdbProtocolStreamHandler {
         Self::vec_to_string(&data)
     }
 
-
     /// 读取一个字符串块，以字符串长度开始。
     ///
     /// # 返回值
     /// - 成功返回读取的字符串，失败返回错误。
     fn read_string_block(&mut self) -> anyhow::Result<String> {
         let string_length = self.read_string(4)?;
-        let string_size = usize::from_str_radix(&string_length, 16).context("Failed to parse string length")?;
+        let string_size =
+            usize::from_str_radix(&string_length, 16).context("Failed to parse string length")?;
         self.read_string(string_size)
     }
 

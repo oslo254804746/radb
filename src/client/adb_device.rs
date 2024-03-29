@@ -1,8 +1,9 @@
-use crate::beans::AppInfo;
+use crate::beans::command::AdbCommand;
 use crate::beans::device_info::AdbDeviceInfo;
 use crate::beans::file_info::{parse_file_info, FileInfo};
 use crate::beans::forward_item::ForwardItem;
 use crate::beans::net_info::NetworkType;
+use crate::beans::AppInfo;
 use crate::client::adb_connection::AdbConnection;
 use crate::connections::adb_protocol::AdbProtocolStreamHandler;
 use crate::connections::adb_socket_config::AdbSocketConfig;
@@ -15,27 +16,25 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::mem::size_of;
 use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;
-use std::{fs, thread, time};
-use std::mem::size_of;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::sleep;
 use std::time::Duration;
+use std::{fs, thread, time};
 
 /// AdbDevice结构体定义了一个ADB设备的基本信息。
 #[derive(Debug)]
 pub struct AdbDevice {
-    pub serial: Option<String>, // 设备的序列号，唯一标识一个设备。
+    pub serial: Option<String>,   // 设备的序列号，唯一标识一个设备。
     pub transport_id: Option<u8>, // 设备的传输ID，用于识别设备在系统中的传输方式。
     pub properties: HashMap<String, String>, // 设备的属性，以键值对形式存储，可包含多种设备信息。
-    pub config: AdbSocketConfig, // ADB设备的socket配置信息。
+    pub config: AdbSocketConfig,  // ADB设备的socket配置信息。
 }
 
-
 impl AdbDevice {
-
     /// 创建一个新的ADB设备实例。
     ///
     /// # 参数
@@ -47,12 +46,11 @@ impl AdbDevice {
     pub fn new_device(serial: &str, cfg: AdbSocketConfig) -> Self {
         Self {
             serial: Some(serial.to_string()), // 将传入的序列号字符串转换为String类型，并存储为Some值。
-            transport_id: None, // 初始化传输ID为None，表示未设置。
-            properties: HashMap::new(), // 创建一个空的HashMap来存储设备的属性。
-            config: cfg, // 使用传入的配置信息。
+            transport_id: None,               // 初始化传输ID为None，表示未设置。
+            properties: HashMap::new(),       // 创建一个空的HashMap来存储设备的属性。
+            config: cfg,                      // 使用传入的配置信息。
         }
     }
-
 
     /// 创建一个具有默认socket配置的新的ADB设备实例。
     ///
@@ -64,8 +62,8 @@ impl AdbDevice {
     pub fn new_device_default(serial: &str) -> Self {
         Self {
             serial: Some(serial.to_string()), // 序列号字符串转换为String类型，并存储为Some值。
-            transport_id: None, // 初始化传输ID为None，表示未设置。
-            properties: HashMap::new(), // 创建一个空的HashMap来存储设备的属性。
+            transport_id: None,               // 初始化传输ID为None，表示未设置。
+            properties: HashMap::new(),       // 创建一个空的HashMap来存储设备的属性。
             config: AdbSocketConfig::default(), // 使用默认的socket配置。
         }
     }
@@ -90,7 +88,6 @@ impl AdbDevice {
             config: self.config.clone(),
         })
     }
-
 
     /// 获取打开设备的传输前缀。
     ///
@@ -141,7 +138,6 @@ impl AdbDevice {
         };
     }
 
-
     /// 打开一个Adb连接，通过给定的命令选项配置传输前缀。
     ///
     /// - `command`：可选的命令字符串，用于配置传输前缀。
@@ -160,7 +156,6 @@ impl AdbDevice {
         ))?;
         Ok(conn)
     }
-
 
     pub fn get_with_command(&mut self, command: &str) -> anyhow::Result<String> {
         let mut conn = self.open_transport(Some(command))?;
@@ -216,15 +211,16 @@ impl AdbDevice {
     /// # 返回值
     /// - `anyhow::Result<AdbConnection>`: 如果命令成功执行，则返回一个AdbConnection的实例；
     ///                                  如果执行过程中出现错误，则返回错误信息。
-    pub fn shell_stream(&mut self, command: &[&str]) -> anyhow::Result<AdbConnection> {
+    pub fn shell_stream<'a, T: Into<AdbCommand<'a>>>(
+        &mut self,
+        command: T,
+    ) -> anyhow::Result<AdbConnection> {
         // 打开与设备的传输通道
+        let command = command.into();
         let mut conn = self.open_transport(None)?;
 
-        // 将命令切片数组转换为命令行字符串
-        let cmd = Self::list2cmdline(command);
-
         // 构造完整的ADB shell命令字符串
-        let send_cmd = format!("shell:{}", cmd);
+        let send_cmd = format!("shell:{}", command.get_command());
 
         // 发送命令并检查是否执行成功
         conn.send_cmd_then_check_okay(&send_cmd).context(format!(
@@ -236,9 +232,6 @@ impl AdbDevice {
         Ok(conn)
     }
 
-
-
-
     /// 在设备或模拟器上执行Shell命令，并返回命令的输出。
     ///
     /// # 参数
@@ -246,7 +239,7 @@ impl AdbDevice {
     ///
     /// # 返回值
     /// - `anyhow::Result<String>`: 命令执行成功则返回命令的输出结果，如果执行过程中出现错误则返回错误信息。
-    pub fn shell(&mut self, command: &[&str]) -> anyhow::Result<String> {
+    pub fn shell<'a, T: Into<AdbCommand<'a>>>(&mut self, command: T) -> anyhow::Result<String> {
         // 通过`shell_stream`方法执行命令，获取命令的输出流
         let mut s = self.shell_stream(command)?;
 
@@ -257,8 +250,10 @@ impl AdbDevice {
         Ok(output)
     }
 
-
-    pub fn shell_trim(&mut self, command: &[&str]) -> anyhow::Result<String> {
+    pub fn shell_trim<'a, T: Into<AdbCommand<'a>>>(
+        &mut self,
+        command: T,
+    ) -> anyhow::Result<String> {
         let mut s = self.shell_stream(command)?;
         let output = s.read_until_close()?;
         Ok(output.trim().to_string())
@@ -339,8 +334,6 @@ impl AdbDevice {
         Err(anyhow!("adb not found"))
     }
 
-
-
     pub fn create_connection<T: Display>(
         &mut self,
         network_type: NetworkType,
@@ -353,7 +346,8 @@ impl AdbDevice {
             }
             _ => format!("{}{}", network_type.to_string(), address),
         };
-        connection.send_cmd_then_check_okay(&cmd)
+        connection
+            .send_cmd_then_check_okay(&cmd)
             .context(format!("Send Command >> {:#?} and Check Okay Failed", &cmd))?;
         Ok(connection)
     }
@@ -361,7 +355,8 @@ impl AdbDevice {
     pub fn tcpip(&mut self, port: u16) -> anyhow::Result<String> {
         let mut connection = self.open_transport(None)?;
         let cmd = format!("tcpip:{}", port);
-        connection.send_cmd_then_check_okay(&cmd)
+        connection
+            .send_cmd_then_check_okay(&cmd)
             .context(format!("Send Command >> {:#?} and Check Okay Failed", &cmd))?;
         let resp = connection
             .read_until_close()
@@ -445,7 +440,8 @@ impl AdbDevice {
     pub fn prepare_sync(&mut self, path: &str, command: &str) -> anyhow::Result<AdbConnection> {
         info!("Start Sync Path {:#?} With Command {:#?}", path, command);
         let mut conn = self.open_transport(None)?;
-        conn.send_cmd_then_check_okay("sync:").context("Start Sync Error")?;
+        conn.send_cmd_then_check_okay("sync:")
+            .context("Start Sync Error")?;
         let path_len = path.as_bytes().len() as u32;
         let mut total_byte = vec![];
         total_byte.extend_from_slice(command.as_bytes());
@@ -765,28 +761,28 @@ impl AdbDevice {
         }
         Err(anyhow!("fail to get gpu"))
     }
-    pub fn logcat(& mut self, flush_exist: bool, command: Option<&str>, lock: Arc<RwLock<bool>>) -> anyhow::Result<impl Iterator<Item = String>> {
-
+    pub fn logcat(
+        &mut self,
+        flush_exist: bool,
+        command: Option<&[&str]>,
+        lock: Arc<RwLock<bool>>,
+    ) -> anyhow::Result<impl Iterator<Item = String>> {
         if flush_exist {
             self.shell(&["logcat", "-c"])?;
         }
-        let conn = self.shell_stream(&["logcat", "-v", "time"])?;
+        let run_command = command.map_or(["logcat", "-v", "time"].as_slice(), |x| x);
+        let conn = self.shell_stream(run_command)?;
         return Ok(std::iter::from_fn(move || {
-                let mut bufreader = BufReader::new(&conn.stream);
+            let mut bufreader = BufReader::new(&conn.stream);
 
-                 while *(lock.read().unwrap()) {
-                    let mut string = String::new();
-                    let data = bufreader.read_line(&mut string);
-                    if data.is_ok(){
-                        return Some(string)
-                    }
+            while *(lock.read().unwrap()) {
+                let mut string = String::new();
+                let data = bufreader.read_line(&mut string);
+                if data.is_ok() {
+                    return Some(string);
                 }
-                None
-            }))
-        }
+            }
+            None
+        }));
     }
-
-
-
-
-
+}
