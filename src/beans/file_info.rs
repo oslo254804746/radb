@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use chrono::Utc;
 use std::convert::TryInto;
 
-#[derive(Debug,PartialEq,PartialOrd, Ord, Eq)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq)]
 pub struct FileInfo {
     pub mode: u32,
     pub size: u32,
