@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::{fs, thread, time};
 
@@ -49,7 +49,7 @@ use crate::protocols::AdbProtocol;
 #[derive(Debug)]
 pub struct AdbDevice<T>
 where
-    T: ToSocketAddrs + Clone,
+    T: ToSocketAddrs + Clone + Debug,
 {
     pub serial: Option<String>,   // 设备的序列号，唯一标识一个设备。
     pub transport_id: Option<u8>, // 设备的传输ID，用于识别设备在系统中的传输方式。
@@ -59,7 +59,7 @@ where
 
 impl<T> AdbDevice<T>
 where
-    T: ToSocketAddrs + Clone,
+    T: ToSocketAddrs + Clone + Debug,
 {
     pub fn new<U>(serial: U, addr: T) -> Self
     where
@@ -839,7 +839,7 @@ where
 #[cfg(feature = "blocking")]
 impl<T> AdbDevice<T>
 where
-    T: ToSocketAddrs + Clone,
+    T: ToSocketAddrs + Clone + Debug,
 {
     /// 打开一个Adb连接，通过给定的命令选项配置传输前缀。
     ///
@@ -1421,7 +1421,7 @@ where
         command: Option<&str>,
         lock: Arc<RwLock<bool>>,
     ) -> anyhow::Result<impl Iterator<Item = String>> {
-        if (flush_exist) {
+        if flush_exist {
             self.shell(&["logcat", "-c"])?;
         }
         let mut conn = self.shell_stream(&["logcat", "-v", "time"])?;

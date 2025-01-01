@@ -8,7 +8,7 @@ mod test_adb {
     fn test_adb_list_devices() {
         let mut adb = AdbClient::new(DEFAULT_ADB_ADDR);
         let devices = adb.list_devices().unwrap();
-        assert_eq!(devices[0].serial, Some("f94ba50e".to_string()));
+        assert_eq!(devices[0].serial, Some("emulator-5554".to_string()));
     }
 
     #[test]
@@ -24,20 +24,14 @@ mod test_adb {
     #[test]
     fn test_adb_disconnect_device() {
         let mut adb = AdbClient::new(DEFAULT_ADB_ADDR);
-        let result = adb.disconnect_device("f94ba50e").unwrap();
-        assert_eq!("disconnected f94ba50e", result)
+        let result = adb.disconnect_device("emulator-5554").unwrap();
+        assert_eq!("disconnected emulator-5554", result)
     }
 
     #[test]
     fn test_adb_connect_device() {
         let mut adb = AdbClient::new(DEFAULT_ADB_ADDR);
-        let result = adb.connect_device("f94ba50e").unwrap();
-        assert_eq!("connected to f94ba50e", result)
+        let result = adb.connect_device("emulator-5554").unwrap();
+        assert_eq!("connected to emulator-5554", result)
     }
-
-    // #[test]
-    // fn test_adb_device_function() {
-    //     let data = device.shell(&["ls", "/data/local/tmp", "-all"]).unwrap();
-    //     assert_eq!("total 24\ndrwxrwx--x 3 shell shell 4096 2023-12-31 11:17:43.777000000 +0000 .\ndrwxr-x--x 4 root  root  4096 2023-02-04 10:13:17.564000000 +0000 ..\ndrwxr-xr-x 5 shell shell 4096 2024-03-16 02:33:13.684000000 +0000 .studio\n", &data)
-    // }
 }

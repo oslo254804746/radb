@@ -1,4 +1,5 @@
 use crate::client::adb_device::AdbDevice;
+use std::fmt::Debug;
 
 use anyhow::{anyhow, Context, Result};
 
@@ -21,9 +22,9 @@ impl AdbClient {
     pub fn parse_device_list_lines<T>(
         lines: &str,
         addr: T,
-    ) -> Result<Vec<AdbDevice<impl ToSocketAddrs + Clone>>>
+    ) -> Result<Vec<AdbDevice<impl ToSocketAddrs + Clone + Debug>>>
     where
-        T: ToSocketAddrs + Clone,
+        T: ToSocketAddrs + Clone + std::fmt::Debug,
     {
         let mut devices = vec![];
         if !lines.is_empty() {
@@ -140,16 +141,13 @@ impl AdbClient {
     pub fn iter_devices(
         &mut self,
     ) -> Result<impl Iterator<Item = AdbDevice<impl ToSocketAddrs + Clone>>> {
-        Ok(self
-            .list_devices()
-            .context("Get Device List Error")?
-            .into_iter())
+        Ok(self.list_devices()?.into_iter())
     }
 
-    pub fn list_devices(&mut self) -> Result<Vec<AdbDevice<impl ToSocketAddrs + Clone>>> {
+    pub fn list_devices(&mut self) -> Result<Vec<AdbDevice<impl ToSocketAddrs + Clone + Debug>>> {
         self.stream.send_cmd_then_check_okay("host:devices")?;
         let resp = self.stream.read_string_block()?;
-        Self::parse_device_list_lines(&resp, self.stream.local_addr()?.clone())
+        Self::parse_device_list_lines(&resp, self.stream.peer_addr()?.clone())
     }
 
     /// 获取 ADB 服务器的版本号。
@@ -202,5 +200,12 @@ impl AdbClient {
         let command = format!("host:disconnect:{}", serial);
         self.stream.send_cmd_then_check_okay(&command)?;
         Ok(self.stream.read_string_block()?)
+    }
+}
+
+#[cfg(feature = "blocking")]
+impl Default for AdbClient {
+    fn default() -> Self {
+        Self::new("127.0.0.1:5037")
     }
 }
