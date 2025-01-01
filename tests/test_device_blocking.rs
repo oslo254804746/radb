@@ -1,15 +1,14 @@
 #[cfg(feature = "blocking")]
 mod test_device {
     use std::fmt::Debug;
-    use std::fs;
     use std::io::Write;
     use std::net::ToSocketAddrs;
     use std::sync::{Arc, RwLock};
     use std::thread::sleep;
     use std::time::Duration;
 
-    use radb::client::adb_device::AdbDevice;
-    use radb::client::AdbClient;
+
+    use radb::client::{AdbClient, AdbDevice};
 
     fn get_android_emulator_device() -> Option<AdbDevice<impl ToSocketAddrs + Clone + Debug>> {
         let mut adb = AdbClient::default();
@@ -35,7 +34,7 @@ mod test_device {
         println!("{:#?}", device.addr);
         let mutex = Arc::new(RwLock::new(true));
         let mutex_arc = Arc::clone(&mutex);
-        let handle = std::thread::spawn(move || {
+        let _ = std::thread::spawn(move || {
             for i in device.logcat(false, None, mutex_arc).unwrap() {
                 println!("{:#?}", i)
             }
