@@ -3,8 +3,6 @@ use std::fmt::Display;
 use std::fs::File;
 use std::{fs, thread, time};
 
-use crate::client::AdbProtocol;
-
 #[cfg(feature = "blocking")]
 use std::io::{BufRead, BufReader, Read, Write};
 #[cfg(feature = "blocking")]
@@ -15,22 +13,22 @@ use std::sync::{Arc, RwLock};
 use anyhow::{anyhow, Context};
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio_async")]
 use async_stream::stream;
 use chrono::DateTime;
 
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio_async")]
 use futures_core::Stream;
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio_async")]
 use futures_util::pin_mut;
+#[cfg(feature = "tokio_async")]
 use futures_util::StreamExt;
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio_async")]
 use tokio::net::{TcpStream, ToSocketAddrs};
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio_async")]
 use tokio::process::Command;
 
 use log::{error, info};
@@ -42,7 +40,11 @@ use crate::beans::net_info::NetworkType;
 use crate::beans::app_info::AppInfo;
 use crate::utils::{adb_path, get_free_port, init_logger};
 use image::{io::Reader as ImageReader, RgbImage};
+
+#[cfg(feature = "tokio_async")]
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufStream};
+
+use crate::protocols::AdbProtocol;
 
 #[derive(Debug)]
 pub struct AdbDevice<T>
@@ -126,7 +128,7 @@ where
     }
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(feature = "tokio_async")]
 impl<T> AdbDevice<T>
 where
     T: ToSocketAddrs + Clone,
