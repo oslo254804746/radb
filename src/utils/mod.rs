@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::Command;
@@ -33,7 +33,7 @@ pub fn adb_path() -> anyhow::Result<PathBuf> {
 }
 
 pub fn get_free_port() -> anyhow::Result<u16> {
-    let socket = TcpListener::bind("127.0.0.1:0").unwrap();
+    let socket = TcpListener::bind("127.0.0.1:0")?;
     Ok(socket.local_addr()?.port())
 }
 
@@ -49,4 +49,9 @@ pub fn start_adb_server() {
                 .expect("Failed to start adb server");
         }
     }
+}
+
+pub fn vec_to_string(data: &[u8]) -> anyhow::Result<String> {
+    let a = String::from_utf8_lossy(&data.to_vec()).to_string();
+    Ok(a)
 }

@@ -6,7 +6,10 @@ pub struct ForwardItem {
 }
 
 impl ForwardItem {
-    pub fn new(serial: &str, local: &str, remote: &str) -> ForwardItem {
+    pub fn new<T>(serial: T, local: T, remote: T) -> ForwardItem
+    where
+        T: ToString,
+    {
         ForwardItem {
             serial: serial.to_string(),
             local: local.to_string(),
