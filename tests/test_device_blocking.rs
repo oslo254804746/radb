@@ -7,7 +7,6 @@ mod test_device {
     use std::thread::sleep;
     use std::time::Duration;
 
-
     use radb::client::{AdbClient, AdbDevice};
 
     fn get_android_emulator_device() -> Option<AdbDevice<impl ToSocketAddrs + Clone + Debug>> {

@@ -19,13 +19,13 @@ use std::time::Duration;
 #[cfg(feature = "tokio_async")]
 use async_stream::stream;
 use chrono::DateTime;
-
 #[cfg(feature = "tokio_async")]
 use futures_core::Stream;
 #[cfg(feature = "tokio_async")]
 use futures_util::pin_mut;
 #[cfg(feature = "tokio_async")]
 use futures_util::StreamExt;
+use once_cell::sync::Lazy;
 #[cfg(feature = "tokio_async")]
 use tokio::net::{TcpStream, ToSocketAddrs};
 #[cfg(feature = "tokio_async")]
@@ -40,11 +40,175 @@ use crate::beans::net_info::NetworkType;
 use crate::beans::app_info::AppInfo;
 use crate::utils::{adb_path, get_free_port, init_logger};
 use image::{io::Reader as ImageReader, RgbImage};
-
+use regex::Regex;
 #[cfg(feature = "tokio_async")]
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufStream};
 
 use crate::protocols::AdbProtocol;
+
+static IP_REGEXES: Lazy<Vec<(Regex, &'static str)>> = Lazy::new(|| {
+    vec![
+        (
+            Regex::new(r"inet\s+addr:([\d.]+)").unwrap(),
+            "ifconfig format",
+        ),
+        (
+            Regex::new(r"inet\s+([\d.]+)/\d+").unwrap(),
+            "ip command format",
+        ),
+        (
+            Regex::new(r"inet\s+([\d.]+)\s+netmask").unwrap(),
+            "alternative ifconfig format",
+        ),
+    ]
+});
+/// 从输出中提取IP地址的辅助函数
+fn extract_ip_from_output(output: &str) -> Option<String> {
+    for (regex, _description) in IP_REGEXES.iter() {
+        if let Some(captures) = regex.captures(output) {
+            if let Some(ip_match) = captures.get(1) {
+                let ip = ip_match.as_str();
+                // 验证IP地址格式
+                if is_valid_ipv4(ip) {
+                    return Some(ip.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 验证IPv4地址格式
+fn is_valid_ipv4(ip: &str) -> bool {
+    let parts: Vec<&str> = ip.split('.').collect();
+    if parts.len() != 4 {
+        return false;
+    }
+
+    parts.iter().all(|&part| {
+        if let Ok(num) = part.parse::<u8>() {
+            num <= 255
+        } else {
+            false
+        }
+    })
+}
+
+/// 从TCP规格字符串中提取端口号
+fn extract_port_from_tcp_spec(tcp_spec: &str) -> Option<u16> {
+    if tcp_spec.starts_with("tcp:") {
+        tcp_spec[4..].parse().ok()
+    } else {
+        None
+    }
+}
+
+/// 转义shell参数
+fn escape_shell_arg(arg: &str) -> String {
+    if arg.is_empty() {
+        return "\"\"".to_string();
+    }
+
+    // 如果不包含特殊字符，直接返回
+    if !arg.chars().any(|c| " \"'\\$`(){}[]|&;<>?*~".contains(c)) {
+        return arg.to_string();
+    }
+
+    // 使用双引号包围并转义内部的特殊字符
+    let mut escaped = String::with_capacity(arg.len() + 10);
+    escaped.push('"');
+
+    for c in arg.chars() {
+        match c {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '$' => escaped.push_str("\\$"),
+            '`' => escaped.push_str("\\`"),
+            _ => escaped.push(c),
+        }
+    }
+
+    escaped.push('"');
+    escaped
+}
+
+/// 提取应用版本信息
+fn extract_app_version_info(output: &str, app_info: &mut AppInfo) {
+    // 版本名称
+    if let Ok(version_name_regex) = Regex::new(r"versionName=([^\s]+)") {
+        if let Some(cap) = version_name_regex.captures(output) {
+            if let Some(version_name) = cap.get(1) {
+                app_info.version_name = Some(version_name.as_str().to_string());
+            }
+        }
+    }
+
+    // 版本代码
+    if let Ok(version_code_regex) = Regex::new(r"versionCode=(\d+)") {
+        if let Some(cap) = version_code_regex.captures(output) {
+            if let Some(version_code) = cap.get(1) {
+                if let Ok(code) = version_code.as_str().parse::<u32>() {
+                    app_info.version_code = Some(code);
+                }
+            }
+        }
+    }
+}
+
+/// 提取应用签名信息
+fn extract_app_signature(output: &str, app_info: &mut AppInfo) {
+    if let Ok(signature_regex) = Regex::new(r"PackageSignatures\{[^}]*\[([^]]+)\]") {
+        if let Some(cap) = signature_regex.captures(output) {
+            if let Some(signature) = cap.get(1) {
+                app_info.signature = Some(signature.as_str().to_string());
+            }
+        }
+    }
+}
+
+/// 提取应用标志信息
+fn extract_app_flags(output: &str, app_info: &mut AppInfo) {
+    if let Ok(flags_regex) = Regex::new(r"pkgFlags=\[\s*([^]]+)\s*\]") {
+        if let Some(cap) = flags_regex.captures(output) {
+            if let Some(flags_str) = cap.get(1) {
+                let flags: Vec<String> = flags_str
+                    .as_str()
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect();
+                app_info.flags = flags;
+            }
+        }
+    }
+}
+
+/// 提取应用时间戳信息
+fn extract_app_timestamps(output: &str, app_info: &mut AppInfo) {
+    use chrono::DateTime;
+    use std::str::FromStr;
+
+    // 首次安装时间
+    if let Ok(first_install_regex) = Regex::new(r"firstInstallTime=([\d-]+\s+[:\d]+)") {
+        if let Some(cap) = first_install_regex.captures(output) {
+            if let Some(time_str) = cap.get(1) {
+                if let Ok(datetime) = DateTime::from_str(time_str.as_str()) {
+                    app_info.first_install_time = Some(datetime);
+                }
+            }
+        }
+    }
+
+    // 最后更新时间
+    if let Ok(last_update_regex) = Regex::new(r"lastUpdateTime=([\d-]+\s+[:\d]+)") {
+        if let Some(cap) = last_update_regex.captures(output) {
+            if let Some(time_str) = cap.get(1) {
+                if let Ok(datetime) = DateTime::from_str(time_str.as_str()) {
+                    app_info.last_update_time = Some(datetime);
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct AdbDevice<T>
@@ -110,20 +274,8 @@ where
 
     pub fn list2cmdline(args: &[&str]) -> String {
         args.iter()
-            .map(|arg| {
-                let mut quoted_arg = String::new();
-                for c in arg.chars() {
-                    if c == '"' {
-                        quoted_arg.push_str("\\\"");
-                    } else if c == '\\' {
-                        quoted_arg.push_str("\\\\");
-                    } else {
-                        quoted_arg.push(c);
-                    }
-                }
-                format!("\"{}\"", quoted_arg)
-            })
-            .collect::<Vec<String>>()
+            .map(|&arg| escape_shell_arg(arg))
+            .collect::<Vec<_>>()
             .join(" ")
     }
 }
@@ -249,37 +401,52 @@ where
         Err(anyhow!("Failed To Forward Port"))
     }
 
-    pub async fn forward_list(&mut self) -> anyhow::Result<Vec<ForwardItem>> {
+    pub async fn forward_list(&mut self) -> Result<Vec<ForwardItem>> {
         let mut connection = self.open_transport(Some("list-forward")).await?;
         let content = connection.read_string_block().await?;
-        let objs = content
+
+        let forward_items = content
             .lines()
-            .map(|x| {
-                let mut s = x.split(" ");
-                if let (3, Some(3)) = s.size_hint() {
-                    let (serial, local, remote) = (
-                        s.nth(0).unwrap_or(""),
-                        s.nth(1).unwrap_or(""),
-                        s.nth(2).unwrap_or(""),
-                    );
-                    Some(ForwardItem::new(serial, local, remote))
+            .filter(|line| !line.trim().is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    Some(ForwardItem::new(parts[0], parts[1], parts[2]))
                 } else {
+                    log::warn!("Invalid forward list line: {}", line);
                     None
                 }
             })
-            .filter(|x| x.is_some())
-            .map(|x| x.unwrap())
             .collect();
-        Ok(objs)
+
+        Ok(forward_items)
     }
-    pub async fn forward_remote_port(&mut self, remote: u16) -> anyhow::Result<u16> {
-        let remote = format!("tcp:{}", remote);
-        let local_port = get_free_port()?;
-        let local = format!("tcp:{}", local_port);
-        match self.forward(&local, &remote, false).await {
-            Ok(_) => Ok(local_port),
-            Err(e) => Err(anyhow!("Failed To Forward Port, Err >>> {}", e)),
+    pub async fn forward_remote_port(&mut self, remote_port: u16) -> Result<u16> {
+        let remote = format!("tcp:{}", remote_port);
+
+        // 检查是否已经存在转发
+        if let Ok(existing_forwards) = self.forward_list().await {
+            for item in existing_forwards {
+                if let Some(ref serial) = self.serial {
+                    if item.serial == *serial && item.remote == remote {
+                        if let Some(local_port) = extract_port_from_tcp_spec(&item.local) {
+                            log::info!("Found existing forward: {} -> {}", item.local, item.remote);
+                            return Ok(local_port);
+                        }
+                    }
+                }
+            }
         }
+
+        // 创建新的端口转发
+        let local_port = crate::utils::get_free_port()?;
+        let local = format!("tcp:{}", local_port);
+
+        self.forward(&local, &remote, false)
+            .await
+            .context("Failed to create port forward")?;
+
+        Ok(local_port)
     }
     pub async fn reverse(
         &mut self,
@@ -659,24 +826,26 @@ where
         self.shell(&["input", "text", keys]).await
     }
 
-    pub async fn wlan_ip(&mut self) -> anyhow::Result<String> {
-        let mut result = self.shell(&["ifconfig", "wlan0"]).await?;
-        let re = regex::Regex::new(r"inet\s*addr:(.*?)\s").unwrap();
-        if let Some(captures) = re.captures(&result) {
-            return Ok(captures.get(1).unwrap().as_str().to_string());
-        }
-        result = self.shell(&["ip", "addr", "show", "dev", "wlan0"]).await?;
-        let re = regex::Regex::new(r"inet (\d+.*?)/\d+").unwrap();
-        if let Some(captures) = re.captures(&result) {
-            return Ok(captures.get(1).unwrap().as_str().to_string());
+    pub async fn wlan_ip(&mut self) -> Result<String> {
+        // 定义要尝试的网络接口和命令
+        let interface_commands = [
+            ("wlan0", vec!["ip", "addr", "show", "dev", "wlan0"]),
+            ("wlan0", vec!["ifconfig", "wlan0"]),
+            ("eth0", vec!["ip", "addr", "show", "dev", "eth0"]),
+            ("eth0", vec!["ifconfig", "eth0"]),
+            ("", vec!["ip", "route", "get", "1.1.1.1"]), // 获取默认路由的IP
+        ];
+
+        for (interface, cmd) in &interface_commands {
+            if let Ok(result) = self.shell(cmd).await {
+                if let Some(ip) = extract_ip_from_output(&result) {
+                    log::info!("Found IP {} on interface {}", ip, interface);
+                    return Ok(ip);
+                }
+            }
         }
 
-        result = self.shell(&["ifconfig", "eth0"]).await?;
-        let re = regex::Regex::new(r"inet\s*addr:(.*?)\s").unwrap();
-        if let Some(captures) = re.captures(&result) {
-            return Ok(captures.get(1).unwrap().as_str().to_string());
-        }
-        Err(anyhow!("fail to parse wlan ip"))
+        Err(anyhow!("Failed to retrieve WLAN IP from any interface"))
     }
 
     pub async fn uninstall(&mut self, package_name: &str) -> anyhow::Result<String> {
@@ -696,59 +865,31 @@ where
     }
 
     pub async fn app_info(&mut self, package_name: &str) -> Option<AppInfo> {
-        let output = self.shell(&["pm", "list", "package", "-3"]).await.ok()?;
+        // 首先检查应用是否存在
+        let output = self
+            .shell(&["pm", "list", "packages", package_name])
+            .await
+            .ok()?;
         if !output.contains(&format!("package:{}", package_name)) {
             return None;
         }
+
+        // 修复：dumpsys 命令拼写错误
         let app_info_output = self
-            .shell(&["dumpsys", "pacakge", package_name])
+            .shell(&["dumpsys", "package", package_name]) // 修复：pacakge -> package
             .await
             .ok()?;
+
         let mut app_info = AppInfo::new(package_name);
-        let version_name_regex = regex::Regex::new(r"versionName=(?P<name>\S+)").unwrap();
-        if let Some(cap) = version_name_regex.captures(&app_info_output) {
-            let version_name = cap.get(1).unwrap().as_str();
-            app_info.version_name = Some(version_name.to_string());
-        }
-        let version_code_regex = regex::Regex::new(r"versionCode=(?P<code>\d+)").unwrap();
-        if let Some(cap) = version_code_regex.captures(&app_info_output) {
-            let version_code = cap.get(1).unwrap().as_str();
-            app_info.version_code = Some(u32::from_str(version_code).ok()?);
-        }
-        let package_signature_regex = regex::Regex::new(r"PackageSignatures\{.*?\[(.*)]}").unwrap();
-        if let Some(cap) = package_signature_regex.captures(&app_info_output) {
-            let signature = cap.get(1).unwrap().as_str();
-            app_info.signature = Some(signature.to_string());
-        }
 
-        if app_info.version_code.as_ref().is_none() && app_info.version_name.as_ref().is_none() {
-            return Some(app_info);
-        }
-        let pkg_flags_regex = regex::Regex::new(r"pkgFlags=\[\s*(.*)\s*]").unwrap();
-        let mut flags = vec![];
-        for (_, [flag]) in pkg_flags_regex
-            .captures_iter(&app_info_output)
-            .map(|c| c.extract())
-        {
-            flags.push(flag.to_string())
-        }
-        app_info.flags = flags;
+        // 使用更健壮的正则表达式匹配
+        extract_app_version_info(&app_info_output, &mut app_info);
+        extract_app_signature(&app_info_output, &mut app_info);
+        extract_app_flags(&app_info_output, &mut app_info);
+        extract_app_timestamps(&app_info_output, &mut app_info);
 
-        let first_install_time_regex =
-            regex::Regex::new(r"firstInstallTime=(?P<time>[-\d]+\s+[:\d]+)").unwrap();
-        if let Some(cap) = first_install_time_regex.captures(&app_info_output) {
-            let first_install_time = cap.get(1).unwrap().as_str();
-            app_info.first_install_time = Some(DateTime::from_str(first_install_time).ok()?);
-        }
-        let last_update_time_regex =
-            regex::Regex::new(r"lastUpdateTime=(?P<time>[-\d]+\s+[:\d]+)").unwrap();
-        if let Some(cap) = last_update_time_regex.captures(&app_info_output) {
-            let first_install_time = cap.get(1).unwrap().as_str();
-            app_info.last_update_time = Some(DateTime::from_str(first_install_time).ok()?);
-        }
         Some(app_info)
     }
-
     pub async fn if_screen_on(&mut self) -> anyhow::Result<bool> {
         let resp = self.shell(&["dumpsys", "power"]).await?;
         Ok(resp.contains("mHoldingDisplaySuspendBlocker=true"))
@@ -949,16 +1090,22 @@ where
     pub fn forward_list(&mut self) -> anyhow::Result<Vec<ForwardItem>> {
         let mut connection = self.open_transport(Some("list-forward"))?;
         let content = connection.read_string_block()?;
-        let mut forward_iterms = vec![];
-        for x in content.lines() {
-            let mut current_parts: Vec<&str> = x.split(" ").collect();
-            if current_parts.len() == 3 {
-                let (serial, local, remote) =
-                    (current_parts[0], current_parts[1], current_parts[2]);
-                forward_iterms.push(ForwardItem::new(serial, local, remote))
-            }
-        }
-        Ok(forward_iterms)
+
+        let forward_items = content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    Some(ForwardItem::new(parts[0], parts[1], parts[2]))
+                } else {
+                    log::warn!("Invalid forward list line: {}", line);
+                    None
+                }
+            })
+            .collect();
+
+        Ok(forward_items)
     }
     pub fn forward_remote_port(&mut self, remote: u16) -> anyhow::Result<u16> {
         let remote = format!("tcp:{}", remote);
@@ -1280,23 +1427,24 @@ where
     }
 
     pub fn wlan_ip(&mut self) -> anyhow::Result<String> {
-        let mut result = self.shell(&["ifconfig", "wlan0"])?;
-        let re = regex::Regex::new(r"inet\s*addr:(.*?)\s").unwrap();
-        if let Some(captures) = re.captures(&result) {
-            return Ok(captures.get(1).unwrap().as_str().to_string());
-        }
-        result = self.shell(&["ip", "addr", "show", "dev", "wlan0"])?;
-        let re = regex::Regex::new(r"inet (\d+.*?)/\d+").unwrap();
-        if let Some(captures) = re.captures(&result) {
-            return Ok(captures.get(1).unwrap().as_str().to_string());
+        let interface_commands = [
+            ("wlan0", vec!["ip", "addr", "show", "dev", "wlan0"]),
+            ("wlan0", vec!["ifconfig", "wlan0"]),
+            ("eth0", vec!["ip", "addr", "show", "dev", "eth0"]),
+            ("eth0", vec!["ifconfig", "eth0"]),
+            ("", vec!["ip", "route", "get", "1.1.1.1"]),
+        ];
+
+        for (interface, cmd) in &interface_commands {
+            if let Ok(result) = self.shell(cmd) {
+                if let Some(ip) = extract_ip_from_output(&result) {
+                    log::info!("Found IP {} on interface {}", ip, interface);
+                    return Ok(ip);
+                }
+            }
         }
 
-        result = self.shell(&["ifconfig", "eth0"])?;
-        let re = regex::Regex::new(r"inet\s*addr:(.*?)\s").unwrap();
-        if let Some(captures) = re.captures(&result) {
-            return Ok(captures.get(1).unwrap().as_str().to_string());
-        }
-        Err(anyhow!("fail to parse wlan ip"))
+        Err(anyhow!("Failed to retrieve WLAN IP from any interface"))
     }
 
     pub fn uninstall(&mut self, package_name: &str) -> anyhow::Result<String> {
