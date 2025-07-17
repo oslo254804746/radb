@@ -104,6 +104,12 @@ impl From<Vec<&str>> for AdbCommand {
     }
 }
 
+impl From<&Vec<&str>> for AdbCommand {
+    fn from(args: &Vec<&str>) -> Self {
+        AdbCommand::Multiple(args.iter().map(|s| s.to_string()).collect())
+    }
+}
+
 impl<const N: usize> From<[&str; N]> for AdbCommand {
     fn from(args: [&str; N]) -> Self {
         AdbCommand::Multiple(args.into_iter().map(String::from).collect())

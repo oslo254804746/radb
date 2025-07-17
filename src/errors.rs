@@ -72,6 +72,10 @@ pub enum AdbError {
     #[error("Time error: {0}")]
     SystemTime(#[from] std::time::SystemTimeError),
 
+    /// Anyhow错误的包装 - 新增
+    #[error("Anyhow error: {0}")]
+    Anyhow(#[from] anyhow::Error),
+
     /// 其他未分类错误
     #[error("Unknown error: {message}")]
     Unknown { message: String },
@@ -81,6 +85,13 @@ pub enum AdbError {
 pub type AdbResult<T> = Result<T, AdbError>;
 
 impl AdbError {
+    /// 从任何实现了Display的错误创建
+    pub fn from_display<E: fmt::Display>(err: E) -> Self {
+        AdbError::Unknown {
+            message: err.to_string(),
+        }
+    }
+
     /// 创建连接失败错误
     pub fn connection_failed<S: Into<String>>(message: S) -> Self {
         AdbError::ConnectionFailed {
@@ -206,6 +217,7 @@ impl AdbError {
             #[cfg(feature = "serde")]
             AdbError::Json(_) => "JSON_ERROR",
             AdbError::SystemTime(_) => "SYSTEM_TIME_ERROR",
+            AdbError::Anyhow(_) => "ANYHOW_ERROR",
             AdbError::Unknown { .. } => "UNKNOWN_ERROR",
         }
     }
@@ -216,22 +228,22 @@ pub trait AdbResultExt<T> {
     /// 将anyhow::Error转换为AdbError
     fn to_adb_error(self) -> AdbResult<T>;
 
-    /// 添加上下文信息
-    fn with_context<F>(self, f: F) -> AdbResult<T>
+    /// 添加上下文信息（重命名以避免与anyhow::Context冲突）
+    fn with_adb_context<F>(self, f: F) -> AdbResult<T>
     where
         F: FnOnce() -> String;
 }
 
 impl<T> AdbResultExt<T> for anyhow::Result<T> {
     fn to_adb_error(self) -> AdbResult<T> {
-        self.map_err(|e| AdbError::unknown(e.to_string()))
+        self.map_err(AdbError::Anyhow)
     }
 
-    fn with_context<F>(self, f: F) -> AdbResult<T>
+    fn with_adb_context<F>(self, f: F) -> AdbResult<T>
     where
         F: FnOnce() -> String,
     {
-        self.map_err(|e| AdbError::unknown(format!("{}: {}", f(), e)))
+        self.map_err(|e| AdbError::Anyhow(e.context(f())))
     }
 }
 
@@ -240,7 +252,7 @@ impl<T> AdbResultExt<T> for Result<T, std::io::Error> {
         self.map_err(AdbError::Io)
     }
 
-    fn with_context<F>(self, f: F) -> AdbResult<T>
+    fn with_adb_context<F>(self, f: F) -> AdbResult<T>
     where
         F: FnOnce() -> String,
     {
@@ -271,6 +283,17 @@ macro_rules! adb_ensure {
         if !$cond {
             return Err($crate::errors::AdbError::unknown(format!($fmt, $($arg)*)));
         }
+    };
+}
+
+/// 便利宏：将anyhow::Result转换为AdbResult
+#[macro_export]
+macro_rules! adb_context {
+    ($result:expr, $msg:expr) => {
+        $result.context($msg).map_err(AdbError::Anyhow)
+    };
+    ($result:expr, $fmt:expr, $($arg:tt)*) => {
+        $result.context(format!($fmt, $($arg)*)).map_err(AdbError::Anyhow)
     };
 }
 
@@ -321,6 +344,39 @@ mod tests {
     fn test_anyhow_conversion() {
         let anyhow_err = anyhow::anyhow!("Some error");
         let adb_err: AdbResult<()> = Err(anyhow_err).to_adb_error();
-        assert!(matches!(adb_err, Err(AdbError::Unknown { .. })));
+        assert!(matches!(adb_err, Err(AdbError::Anyhow(_))));
+    }
+
+    #[test]
+    fn test_anyhow_from_conversion() {
+        let anyhow_err = anyhow::anyhow!("Some error");
+        let adb_err: AdbError = anyhow_err.into();
+        assert!(matches!(adb_err, AdbError::Anyhow(_)));
+    }
+}
+
+// 使用示例
+mod examples {
+    use super::*;
+    use anyhow::Context;
+
+    // 示例函数，展示如何使用改进的错误处理
+    async fn example_function() -> AdbResult<()> {
+        // 方法1：使用 #[from] 自动转换（推荐）
+        let _result = some_anyhow_function().context("Failed to create port forward")?;
+
+        // 方法2：使用扩展trait方法
+        let _result = some_anyhow_function()
+            .with_adb_context(|| "Failed to create port forward".to_string())?;
+
+        // 方法3：使用便利宏
+        let _result = adb_context!(some_anyhow_function(), "Failed to create port forward")?;
+
+        Ok(())
+    }
+
+    // 模拟返回anyhow::Result的函数
+    fn some_anyhow_function() -> anyhow::Result<()> {
+        Ok(())
     }
 }
