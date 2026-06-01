@@ -1,9 +1,7 @@
 use crate::errors::{AdbError, AdbResult};
-use anyhow::{anyhow, Context};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::Command;
-use tracing::Level;
 use which::which;
 
 #[cfg(windows)]
@@ -31,15 +29,24 @@ pub fn get_free_port() -> AdbResult<u16> {
 }
 
 pub fn start_adb_server() {
+    start_adb_server_result().expect("Failed to start adb server");
+}
+
+pub fn start_adb_server_result() -> AdbResult<()> {
     match adb_path() {
-        Err(_) => {
-            panic!("Adb Path Not Found")
-        }
+        Err(err) => Err(err),
         Ok(path) => {
-            Command::new(path)
+            let output = Command::new(path)
                 .arg("start-server")
-                .output()
-                .expect("Failed to start adb server");
+                .output()?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(AdbError::command_failed(
+                    "adb start-server",
+                    String::from_utf8_lossy(&output.stderr).to_string(),
+                ))
+            }
         }
     }
 }

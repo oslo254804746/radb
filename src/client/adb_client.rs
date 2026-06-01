@@ -45,17 +45,23 @@ pub mod async_impl {
     use tokio::net::{TcpStream, ToSocketAddrs};
 
     impl AdbClient {
+        pub async fn connect<T>(addr: T) -> AdbResult<Self>
+        where
+            T: ToSocketAddrs,
+        {
+            let stream = TcpStream::connect(addr).await?;
+            Ok(Self { stream })
+        }
+
         pub async fn default() -> Self {
-            let stream = TcpStream::connect(DEFAULT_ADB_ADDR).await.unwrap();
-            Self { stream }
+            Self::connect(DEFAULT_ADB_ADDR).await.unwrap()
         }
 
         pub async fn new<T>(addr: T) -> Self
         where
             T: ToSocketAddrs,
         {
-            let stream = TcpStream::connect(addr).await.unwrap();
-            Self { stream }
+            Self::connect(addr).await.unwrap()
         }
 
         /// 以迭代器的形式列出所有连接的 ADB 设备。
@@ -151,12 +157,19 @@ pub mod blocking_impl {
     }
 
     impl AdbClient {
+        pub fn connect<T>(addr: T) -> AdbResult<Self>
+        where
+            T: ToSocketAddrs,
+        {
+            let stream = TcpStream::connect(addr)?;
+            Ok(Self { stream })
+        }
+
         pub fn new<T>(addr: T) -> Self
         where
             T: ToSocketAddrs,
         {
-            let stream = TcpStream::connect(addr).unwrap();
-            Self { stream }
+            Self::connect(addr).unwrap()
         }
 
         /// 以迭代器的形式列出所有连接的 ADB 设备。

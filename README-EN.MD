@@ -24,73 +24,42 @@ radb = "0.1.7"
 
 ### Example Code
 
-#### Get Device List
+#### Get Device List (blocking, default)
 
 ```rust
-use radb::AdbDevice;
-use radb::AdbClient;
+use radb::{AdbClient, AdbResult};
 
-fn main() {
-    let mut a = AdbClient::default();
-    let device = a.iter_devices().unwrap().next();
-    if let Some(mut device) = device{
-        println!("{:#?}",&device.serial);
-        let output = device.shell("echo \"Hello Android\" ");
-        println!("{}",output.unwrap());
+fn main() -> AdbResult<()> {
+    let mut client = AdbClient::connect("127.0.0.1:5037")?;
+    let mut devices = client.iter_devices()?;
+
+    if let Some(mut device) = devices.next() {
+        println!("{:#?}", &device.serial);
+        let output = device.shell(["echo", "Hello Android"])?;
+        println!("{}", output);
     }
+
+    Ok(())
 }
 ```
 
-#### Using Log Feature (logcat)
+#### Get Device List (Tokio async)
 
 ```rust
-#[cfg(test)]
-mod tests {
-    const TEST_DEVICE_SERIAL: &str = "3508719615000K5";
-    const TEST_PACKAGE: &str = "com.android.chrome";
-    const TEST_DIR: &str = "/data/local/tmp";
-    const DEFAULT_ADB_ADDR: &str = "127.0.0.1:5037";
+use radb::{AdbClient, AdbResult};
 
-    #[cfg(feature = "blocking")]
-    mod device_blocking_tests {
-        use super::*;
-        use radb::beans::command::AdbCommand;
-        use std::path::PathBuf;
+#[tokio::main]
+async fn main() -> AdbResult<()> {
+    let mut client = AdbClient::connect("127.0.0.1:5037").await?;
+    let devices = client.list_devices().await?;
 
-        fn create_test_device() -> AdbDevice<&'static str> {
-            AdbDevice::new(TEST_DEVICE_SERIAL, DEFAULT_ADB_ADDR)
-        }
-
-        #[test]
-        fn test_device_creation() {
-            let device = create_test_device();
-            assert_eq!(device.serial, Some(TEST_DEVICE_SERIAL.to_string()));
-        }
+    for mut device in devices {
+        println!("{:#?}", &device.serial);
+        let output = device.shell(["echo", "Hello Android"]).await?;
+        println!("{}", output);
     }
 
-    #[test]
-    fn test_logcat() {
-        setup_test_environment();
-        let mut device = create_test_device();
-
-        // Test logcat
-        let logcat_result = device.logcat(true, None);
-        assert!(logcat_result.is_ok());
-
-        let mut logcat_iter = logcat_result.unwrap();
-        let mut count = 0;
-        for line in logcat_iter {
-            if line.is_ok() {
-                count += 1;
-                if count >= 5 {
-                    // Only read first 5 lines
-                    break;
-                }
-            }
-        }
-        println!("Read {} logcat lines", count);
-    }
-
+    Ok(())
 }
 ```
 
@@ -123,6 +92,28 @@ You can choose to enable different features based on your needs:
 version = "0.1.7"
 features = ["tokio_async"]
 ```
+
+`blocking` and `tokio_async` cannot be enabled at the same time. Both public APIs share the same ADB command construction, response parsing, and sync file-transfer core; only connection handling, IO, and `await` adaptation are runtime-specific. `AdbClient::default()` and `AdbClient::new(...)` remain available for compatibility, but they panic on connection failure; new code should prefer `AdbClient::connect(...)`.
+
+## 🧪 Testing
+
+Default tests do not require a physical device:
+
+```powershell
+cargo test --lib
+cargo test --test protocol_regressions
+cargo test --no-run
+```
+
+Hardware integration tests are opt-in with `RADB_TEST_SERIAL`:
+
+```powershell
+$env:RADB_TEST_SERIAL="emulator-5554"
+cargo test --test blocking_integration
+cargo test --no-default-features --features tokio_async --test async_integration
+```
+
+When `RADB_TEST_SERIAL` is not set, hardware tests return early.
 
 ## 📦 Documentation
 

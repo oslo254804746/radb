@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::client::common;
-use crate::errors::{AdbError, AdbResult};
+use crate::errors::AdbResult;
 #[cfg(feature = "blocking")]
 use std::net::ToSocketAddrs;
 #[cfg(feature = "tokio_async")]
@@ -80,7 +80,7 @@ pub mod async_impl {
     use std::io::Write;
     use std::path::PathBuf;
     use std::{fs, time};
-    use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, BufStream};
+    use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::net::{TcpStream, ToSocketAddrs};
     use tokio::process::Command;
 
@@ -321,7 +321,7 @@ pub mod async_impl {
                         if data.eq("DONE") {
                             break
                         } else {
-                            let mut current_data = conn.recv(16).await?;
+                            let current_data = conn.recv(16).await?;
                             let name_length_bytes = &current_data[12..=15];
                             let name_length = u32::from_le_bytes(name_length_bytes.try_into().unwrap());
                             let path = conn.read_string(name_length as usize).await?;
@@ -358,7 +358,7 @@ pub mod async_impl {
         }
 
         pub async fn list(&mut self, path: &str) -> AdbResult<Vec<FileInfo>> {
-            let mut stream = self.iter_directory(path).await?;
+            let stream = self.iter_directory(path).await?;
             let mut files = vec![];
             pin_mut!(stream);
             while let Some(data) = stream.next().await {
@@ -1007,7 +1007,7 @@ pub mod blocking_impl {
                 return if data.eq("DONE") {
                     None
                 } else {
-                    let mut current_data = conn.recv(16).ok()?;
+                    let current_data = conn.recv(16).ok()?;
                     let name_length_bytes = &current_data[12..=15];
                     let name_length = u32::from_le_bytes(name_length_bytes.try_into().unwrap());
                     let path = conn.read_string(name_length as usize).ok()?;

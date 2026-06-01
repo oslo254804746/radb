@@ -33,7 +33,7 @@ impl AdbCommand {
     }
 
     /// 获取命令字符串的借用版本（减少分配）
-    pub fn get_command_cow(&self) -> Cow<str> {
+    pub fn get_command_cow(&self) -> Cow<'_, str> {
         match self {
             AdbCommand::Single(s) => Cow::Borrowed(s),
             AdbCommand::Multiple(parts) => Cow::Owned(shell_escape_args(parts)),

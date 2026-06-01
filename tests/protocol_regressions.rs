@@ -106,3 +106,12 @@ fn parse_file_info_rejects_short_buffers() {
     let err = radb::beans::parse_file_info(vec![1, 2, 3], "/tmp/a").unwrap_err();
     assert!(err.to_string().contains("short"));
 }
+
+#[cfg(feature = "blocking")]
+#[test]
+fn blocking_connect_reports_connection_failures() {
+    match radb::AdbClient::connect("127.0.0.1:0") {
+        Ok(_) => panic!("connect unexpectedly succeeded"),
+        Err(err) => assert!(matches!(err, radb::AdbError::Io(_))),
+    }
+}

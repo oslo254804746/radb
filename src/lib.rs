@@ -25,7 +25,7 @@
 //!
 //! fn main() -> AdbResult<()> {
 //!     // Connect to ADB server
-//!     let mut client = AdbClient::default();
+//!     let mut client = AdbClient::connect("127.0.0.1:5037")?;
 //!     
 //!     // Get device list
 //!     let devices = client.list_devices()?;
@@ -51,8 +51,7 @@
 //! #[tokio::main]
 //! async fn main() -> AdbResult<()> {
 //!     // Connect to ADB server
-//!     
-//! let mut client = AdbClient::default().await;
+//!     let mut client = AdbClient::connect("127.0.0.1:5037").await?;
 //!     
 //!     // Get device list
 //!     let devices = client.list_devices().await?;
@@ -76,7 +75,10 @@
 //!
 //! - `blocking`: Enable blocking/synchronous API (default)
 //! - `tokio_async`: Enable async/await API with Tokio runtime
-//! - `serde`: Enable serialization support for data structures
+//!
+//! `blocking` and `tokio_async` share command construction, response parsing,
+//! and ADB sync frame handling. The runtime-specific layers only handle
+//! connection setup, IO, and `await` adaptation.
 //!
 //! ## Error Handling
 //!
@@ -196,14 +198,14 @@ pub mod util {
     /// Get ADB server version (convenience function)
     #[cfg(feature = "blocking")]
     pub fn get_adb_server_version() -> crate::AdbResult<String> {
-        let mut client = crate::AdbClient::default();
+        let mut client = crate::AdbClient::connect("127.0.0.1:5037")?;
         client.server_version()
     }
 
     /// Get ADB server version (async convenience function)
     #[cfg(feature = "tokio_async")]
     pub async fn get_adb_server_version_async() -> crate::AdbResult<String> {
-        let mut client = crate::AdbClient::default().await;
+        let mut client = crate::AdbClient::connect("127.0.0.1:5037").await?;
         client.server_version().await
     }
 }
@@ -216,7 +218,9 @@ pub mod blocking {
     //! This module contains the blocking versions of ADB operations.
     //! Use this when you don't need async/await functionality.
 
+    #[allow(unused_imports)]
     pub use crate::client::adb_client::blocking_impl::*;
+    #[allow(unused_imports)]
     pub use crate::client::adb_device::blocking_impl::*;
     pub use crate::protocols::blocking::AdbProtocol;
 }
@@ -228,7 +232,9 @@ pub mod r#async {
     //! This module contains the async versions of ADB operations.
     //! Use this when you need async/await functionality with Tokio.
 
+    #[allow(unused_imports)]
     pub use crate::client::adb_client::async_impl::*;
+    #[allow(unused_imports)]
     pub use crate::client::adb_device::async_impl::*;
     pub use crate::protocols::tokio_async::AdbProtocol;
 }
@@ -270,14 +276,14 @@ pub mod builder {
         #[cfg(feature = "blocking")]
         pub fn build(self) -> AdbResult<AdbClient> {
             let addr = self.addr.unwrap_or_else(|| "127.0.0.1:5037".to_string());
-            Ok(AdbClient::new(addr))
+            AdbClient::connect(addr)
         }
 
         /// Build the client (async version)
         #[cfg(feature = "tokio_async")]
         pub async fn build_async(self) -> AdbResult<AdbClient> {
             let addr = self.addr.unwrap_or_else(|| "127.0.0.1:5037".to_string());
-            Ok(AdbClient::new(addr).await)
+            AdbClient::connect(addr).await
         }
     }
 
@@ -306,7 +312,7 @@ pub mod test_utils {
     /// Get test device (if available)
     #[cfg(feature = "blocking")]
     pub fn get_test_device() -> Option<AdbDevice<impl std::net::ToSocketAddrs + Clone + Debug>> {
-        let mut client = AdbClient::default();
+        let mut client = AdbClient::connect("127.0.0.1:5037").ok()?;
         client.list_devices().ok()?.into_iter().next()
     }
 
@@ -314,7 +320,7 @@ pub mod test_utils {
     #[cfg(feature = "tokio_async")]
     pub async fn get_test_device_async(
     ) -> Option<AdbDevice<impl tokio::net::ToSocketAddrs + Clone + Debug>> {
-        let mut client = AdbClient::default().await;
+        let mut client = AdbClient::connect("127.0.0.1:5037").await.ok()?;
         client.list_devices().await.ok()?.into_iter().next()
     }
 }
@@ -369,10 +375,6 @@ compile_error!("Must enable either 'blocking' or 'tokio_async' feature");
 // Platform-specific optimizations
 #[cfg(target_os = "android")]
 compile_error!("This library is not intended to run on Android devices");
-
-// Integration with common async runtimes
-#[cfg(all(feature = "tokio_async", feature = "async-std"))]
-compile_error!("Cannot use both Tokio and async-std features");
 
 // Export the main ADB namespace for convenience
 pub mod adb {
