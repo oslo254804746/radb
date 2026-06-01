@@ -237,7 +237,8 @@ pub mod async_impl {
             norebind: bool,
         ) -> AdbResult<()> {
             let full_cmd = build_reverse_command(remote, local, norebind);
-            self.open_transport(Some(&full_cmd)).await?;
+            let mut connection = self.open_transport(None).await?;
+            connection.send_cmd_then_check_okay(&full_cmd).await?;
             Ok(())
         }
 
@@ -958,7 +959,8 @@ pub mod blocking_impl {
 
         pub fn reverse(&mut self, remote: &str, local: &str, norebind: bool) -> AdbResult<()> {
             let full_cmd = build_reverse_command(remote, local, norebind);
-            self.open_transport(Some(&full_cmd))?;
+            let mut connection = self.open_transport(None)?;
+            connection.send_cmd_then_check_okay(&full_cmd)?;
             Ok(())
         }
 

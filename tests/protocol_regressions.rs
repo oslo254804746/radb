@@ -17,7 +17,11 @@ fn failing_status() -> std::process::ExitStatus {
 fn reverse_command_uses_reverse_service_and_semicolon_payload() {
     assert_eq!(
         radb::client::common::build_reverse_command("tcp:8080", "tcp:9090", false),
-        "reverse:tcp:8080;tcp:9090"
+        "reverse:forward:tcp:8080;tcp:9090"
+    );
+    assert_eq!(
+        radb::client::common::build_reverse_command("tcp:8080", "tcp:9090", true),
+        "reverse:forward:norebind:tcp:8080;tcp:9090"
     );
 }
 

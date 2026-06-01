@@ -73,9 +73,9 @@ pub fn build_forward_command(local: &str, remote: &str, norebind: bool) -> Strin
 
 pub fn build_reverse_command(remote: &str, local: &str, norebind: bool) -> String {
     if norebind {
-        format!("reverse:norebind:{};{}", remote, local)
+        format!("reverse:forward:norebind:{};{}", remote, local)
     } else {
-        format!("reverse:{};{}", remote, local)
+        format!("reverse:forward:{};{}", remote, local)
     }
 }
 
