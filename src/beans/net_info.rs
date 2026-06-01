@@ -28,15 +28,24 @@ impl Display for NetworkType {
 
 impl NetworkType {
     /// 从字符串解析网络类型
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
+        s.parse().ok()
+    }
+}
+
+impl std::str::FromStr for NetworkType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "tcp" => Some(NetworkType::Tcp),
-            "unix" | "localabstract" => Some(NetworkType::LocalAbstract),
-            "dev" => Some(NetworkType::Dev),
-            "local" => Some(NetworkType::Local),
-            "localreserved" => Some(NetworkType::LocalReserved),
-            "localfilesystem" => Some(NetworkType::LocalFileSystem),
-            _ => None,
+            "tcp" => Ok(NetworkType::Tcp),
+            "unix" | "localabstract" => Ok(NetworkType::LocalAbstract),
+            "dev" => Ok(NetworkType::Dev),
+            "local" => Ok(NetworkType::Local),
+            "localreserved" => Ok(NetworkType::LocalReserved),
+            "localfilesystem" => Ok(NetworkType::LocalFileSystem),
+            _ => Err(()),
         }
     }
 }

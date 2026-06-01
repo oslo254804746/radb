@@ -5,16 +5,15 @@ use std::process::Command;
 use which::which;
 
 #[cfg(windows)]
-const ADB_EXECUTE_FILE_NAME: &'static str = "adb.exe";
+const ADB_EXECUTE_FILE_NAME: &str = "adb.exe";
 #[cfg(not(windows))]
-const ADB_EXECUTE_FILE_NAME: &'static str = "adb";
+const ADB_EXECUTE_FILE_NAME: &str = "adb";
 
-const ADBUTILS_ADB_PATH: &'static str = "ADBUTILS_ADB_PATH";
+const ADBUTILS_ADB_PATH: &str = "ADBUTILS_ADB_PATH";
 
 pub fn adb_path() -> AdbResult<PathBuf> {
-    let adb_env = std::env::var(ADBUTILS_ADB_PATH);
-    if adb_env.is_ok() {
-        Ok(PathBuf::from(adb_env.unwrap()))
+    if let Ok(adb_env) = std::env::var(ADBUTILS_ADB_PATH) {
+        Ok(PathBuf::from(adb_env))
     } else {
         match which(ADB_EXECUTE_FILE_NAME) {
             Ok(path) => Ok(path),

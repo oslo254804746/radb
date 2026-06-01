@@ -145,8 +145,7 @@ pub mod async_impl {
         /// - `command`: 一个包含多个命令参数的字符串切片数组，每个元素都是一个命令参数。
         ///
         /// # 返回值
-        /// - `AdbResult<AdbConnection>`: 如果命令成功执行，则返回一个AdbConnection的实例；
-        ///                                  如果执行过程中出现错误，则返回错误信息。
+        /// - `AdbResult<AdbConnection>`: 如果命令成功执行，则返回一个AdbConnection的实例；否则返回错误信息。
         pub async fn shell_stream<T2: Into<AdbCommand>>(
             &mut self,
             command: T2,
@@ -159,7 +158,7 @@ pub mod async_impl {
             let send_cmd = format!("shell:{}", cmd.get_command());
 
             // 发送命令并检查是否执行成功
-            let _ = conn.send_cmd_then_check_okay(&send_cmd).await?;
+            conn.send_cmd_then_check_okay(&send_cmd).await?;
 
             // 返回成功的AdbConnection实例
             Ok(conn)
@@ -252,7 +251,7 @@ pub mod async_impl {
                 NetworkType::LocalAbstract | NetworkType::Unix => {
                     format!("{}{}", "localabstract:", address)
                 }
-                _ => format!("{}{}", network_type.to_string(), address),
+                _ => format!("{}{}", network_type, address),
             };
             connection
                 .send_cmd_then_check_okay(&cmd)
@@ -488,7 +487,7 @@ pub mod async_impl {
         }
 
         pub async fn switch_screen(&mut self, status: bool) -> AdbResult<String> {
-            if status == true {
+            if status {
                 self.keyevent("224").await
             } else {
                 self.keyevent("223").await
@@ -531,7 +530,7 @@ pub mod async_impl {
             match self.install_remote(&dst, true).await {
                 Ok(resp) => {
                     info!("Install Apk Successed >> <{:#?}>", &resp);
-                    return Ok(());
+                    Ok(())
                 }
                 Err(e) => {
                     let error_string = format!("fail to install apk >>> {}", e);
@@ -562,7 +561,7 @@ pub mod async_impl {
                 "--ez",
                 "state",
             ];
-            if status == true {
+            if status {
                 base_setting_cmd.push("1");
                 base_am_cmd.push("true");
             } else {
@@ -575,7 +574,7 @@ pub mod async_impl {
 
         pub async fn switch_wifi(&mut self, status: bool) -> AdbResult<String> {
             let mut args = vec!["svc", "wifi"];
-            if status == true {
+            if status {
                 args.push("enable");
             } else {
                 args.push("disable");
@@ -708,15 +707,12 @@ pub mod async_impl {
 
         pub async fn get_device_gpu(&mut self) -> AdbResult<String> {
             let resp = self.shell(["dumpsys", "SurfaceFlinger"]).await;
-            match resp {
-                Ok(data) => {
-                    for x in data.split("\n") {
-                        if x.starts_with("GLES:") {
-                            return Ok(x.to_string());
-                        }
+            if let Ok(data) = resp {
+                for x in data.lines() {
+                    if x.starts_with("GLES:") {
+                        return Ok(x.to_string());
                     }
                 }
-                _ => {}
             }
             Err(AdbError::from_display("fail to get gpu"))
         }
@@ -867,8 +863,7 @@ pub mod blocking_impl {
         /// - `command`: 一个包含多个命令参数的字符串切片数组，每个元素都是一个命令参数。
         ///
         /// # 返回值
-        /// - `AdbResult<AdbConnection>`: 如果命令成功执行，则返回一个AdbConnection的实例；
-        ///                                  如果执行过程中出现错误，则返回错误信息。
+        /// - `AdbResult<AdbConnection>`: 如果命令成功执行，则返回一个AdbConnection的实例；否则返回错误信息。
         pub fn shell_stream<T2: Into<AdbCommand>>(&mut self, command: T2) -> AdbResult<TcpStream> {
             // 打开与设备的传输通道
             let mut conn = self.open_transport(None)?;
@@ -1004,7 +999,7 @@ pub mod blocking_impl {
             let mut conn = self.prepare_sync(path, "LIST")?;
             Ok(std::iter::from_fn(move || {
                 let data = conn.read_string(4).ok()?;
-                return if data.eq("DONE") {
+                if data.eq("DONE") {
                     None
                 } else {
                     let current_data = conn.recv(16).ok()?;
@@ -1012,7 +1007,7 @@ pub mod blocking_impl {
                     let name_length = u32::from_le_bytes(name_length_bytes.try_into().unwrap());
                     let path = conn.read_string(name_length as usize).ok()?;
                     Some(parse_file_info(current_data, path).ok()?)
-                };
+                }
             }))
         }
 
@@ -1116,7 +1111,7 @@ pub mod blocking_impl {
         }
 
         pub fn switch_screen(&mut self, status: bool) -> AdbResult<String> {
-            if status == true {
+            if status {
                 self.keyevent("224")
             } else {
                 self.keyevent("223")
@@ -1188,7 +1183,7 @@ pub mod blocking_impl {
                 "--ez",
                 "state",
             ];
-            if status == true {
+            if status {
                 base_setting_cmd.push("1");
                 base_am_cmd.push("true");
             } else {
@@ -1201,7 +1196,7 @@ pub mod blocking_impl {
 
         pub fn switch_wifi(&mut self, status: bool) -> AdbResult<String> {
             let mut args = vec!["svc", "wifi"];
-            if status == true {
+            if status {
                 args.push("enable");
             } else {
                 args.push("disable");
@@ -1327,15 +1322,12 @@ pub mod blocking_impl {
 
         pub fn get_device_gpu(&mut self) -> AdbResult<String> {
             let resp = self.shell(["dumpsys", "SurfaceFlinger"]);
-            match resp {
-                Ok(data) => {
-                    for x in data.split("\n") {
-                        if x.starts_with("GLES:") {
-                            return Ok(x.to_string());
-                        }
+            if let Ok(data) = resp {
+                for x in data.lines() {
+                    if x.starts_with("GLES:") {
+                        return Ok(x.to_string());
                     }
                 }
-                _ => {}
             }
             Err(AdbError::from_display("fail to get gpu"))
         }

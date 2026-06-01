@@ -1,3 +1,4 @@
+#[cfg(feature = "blocking")]
 use radb::protocols::blocking::AdbProtocol;
 
 #[cfg(unix)]
@@ -48,6 +49,7 @@ fn parse_device_list_preserves_serial_and_state() {
 }
 
 #[test]
+#[cfg(feature = "blocking")]
 fn read_response_rejects_short_length_prefix() {
     let mut cursor = std::io::Cursor::new(b"00".to_vec());
     let result = AdbProtocol::read_response(&mut cursor);
@@ -55,6 +57,7 @@ fn read_response_rejects_short_length_prefix() {
 }
 
 #[test]
+#[cfg(feature = "blocking")]
 fn read_string_rejects_short_fixed_size_payload() {
     let mut cursor = std::io::Cursor::new(b"ab".to_vec());
     let result = AdbProtocol::read_string(&mut cursor, 4);

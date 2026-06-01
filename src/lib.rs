@@ -146,7 +146,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
 pub const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 
-/// Library information
+// Library information
 pub mod info {
     //! Library metadata and version information
 
@@ -357,13 +357,6 @@ pub use std::net;
 // Documentation examples
 #[cfg(doctest)]
 doc_comment::doctest!("../README.md");
-
-// Version check at compile time
-const _: fn() = || {
-    // This will cause a compile error if the version format is unexpected
-    let version = VERSION;
-    assert!(version.len() > 0, "Version should not be empty");
-};
 
 // Feature compatibility checks
 #[cfg(all(feature = "blocking", feature = "tokio_async"))]
