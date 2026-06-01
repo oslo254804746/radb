@@ -36,3 +36,5 @@ default = ["blocking"]
 tokio_async = ["futures-core", "futures-util", "async-stream", "async-trait", "tokio"]
 blocking = []
 
+[dev-dependencies]
+doc-comment = "0.3.3"

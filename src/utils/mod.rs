@@ -35,9 +35,7 @@ pub fn start_adb_server_result() -> AdbResult<()> {
     match adb_path() {
         Err(err) => Err(err),
         Ok(path) => {
-            let output = Command::new(path)
-                .arg("start-server")
-                .output()?;
+            let output = Command::new(path).arg("start-server").output()?;
             if output.status.success() {
                 Ok(())
             } else {

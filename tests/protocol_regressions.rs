@@ -66,7 +66,8 @@ fn read_string_rejects_short_fixed_size_payload() {
 
 #[test]
 fn encode_path_command_uses_little_endian_path_length() {
-    let encoded = radb::sync_protocol::encode_path_command(radb::sync_protocol::ID_RECV, "/sdcard/a.bin");
+    let encoded =
+        radb::sync_protocol::encode_path_command(radb::sync_protocol::ID_RECV, "/sdcard/a.bin");
 
     assert_eq!(&encoded[0..4], b"RECV");
     assert_eq!(
@@ -102,6 +103,19 @@ fn recv_frame_done_has_no_payload() {
     let parsed = radb::sync_protocol::read_recv_frame(&mut cursor).unwrap();
 
     assert_eq!(parsed, radb::sync_protocol::RecvFrame::Done);
+}
+
+#[test]
+fn recv_frame_done_ignores_length_field() {
+    let mut frame = Vec::new();
+    frame.extend_from_slice(b"DONE");
+    frame.extend_from_slice(&(1_700_000_000_u32).to_le_bytes());
+
+    let mut cursor = std::io::Cursor::new(frame);
+    let parsed = radb::sync_protocol::read_recv_frame(&mut cursor).unwrap();
+
+    assert_eq!(parsed, radb::sync_protocol::RecvFrame::Done);
+    assert_eq!(cursor.position(), 8);
 }
 
 #[test]

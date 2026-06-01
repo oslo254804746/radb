@@ -28,7 +28,9 @@ radb = "0.1.7"
 
 #### 获取设备列表（blocking，默认）
 
-```rust
+```rust,no_run
+# #[cfg(feature = "blocking")]
+# mod blocking_example {
 use radb::{AdbClient, AdbResult};
 
 fn main() -> AdbResult<()> {
@@ -43,11 +45,14 @@ fn main() -> AdbResult<()> {
 
     Ok(())
 }
+# }
 ```
 
 #### 获取设备列表（Tokio async）
 
-```rust
+```rust,no_run
+# #[cfg(feature = "tokio_async")]
+# mod async_example {
 use radb::{AdbClient, AdbResult};
 
 #[tokio::main]
@@ -63,6 +68,7 @@ async fn main() -> AdbResult<()> {
 
     Ok(())
 }
+# }
 ```
 
 

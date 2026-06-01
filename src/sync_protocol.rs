@@ -15,6 +15,12 @@ pub enum RecvFrame {
     Fail(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecvFrameHeader {
+    Payload { id: [u8; 4], payload_len: usize },
+    Done,
+}
+
 pub fn encode_path_command(command: &[u8; 4], path: &str) -> Vec<u8> {
     let path_bytes = path.as_bytes();
     let mut out = Vec::with_capacity(8 + path_bytes.len());
@@ -31,6 +37,20 @@ pub fn parse_u32_le(data: &[u8]) -> AdbResult<u32> {
     Ok(u32::from_le_bytes(data.try_into().map_err(|_| {
         AdbError::protocol_error("Invalid little-endian u32")
     })?))
+}
+
+pub fn parse_recv_frame_header(id: [u8; 4], length: [u8; 4]) -> AdbResult<RecvFrameHeader> {
+    match &id {
+        ID_DATA | ID_FAIL => Ok(RecvFrameHeader::Payload {
+            id,
+            payload_len: u32::from_le_bytes(length) as usize,
+        }),
+        ID_DONE => Ok(RecvFrameHeader::Done),
+        _ => Err(AdbError::protocol_error(format!(
+            "Unexpected sync frame id: {}",
+            String::from_utf8_lossy(&id)
+        ))),
+    }
 }
 
 pub fn parse_recv_frame(id: [u8; 4], payload: Vec<u8>) -> AdbResult<RecvFrame> {
@@ -59,7 +79,11 @@ pub fn read_recv_frame<R: Read>(reader: &mut R) -> AdbResult<RecvFrame> {
 
     let mut len = [0_u8; 4];
     reader.read_exact(&mut len)?;
-    let payload_len = u32::from_le_bytes(len) as usize;
+    let header = parse_recv_frame_header(id, len)?;
+
+    let RecvFrameHeader::Payload { id, payload_len } = header else {
+        return Ok(RecvFrame::Done);
+    };
 
     let mut payload = vec![0_u8; payload_len];
     if payload_len > 0 {

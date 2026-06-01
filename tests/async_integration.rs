@@ -5,16 +5,18 @@ use std::io::Write;
 
 const DEFAULT_ADB_ADDR: &str = "127.0.0.1:5037";
 
-fn configured_device() -> Option<AdbDevice<&'static str>> {
-    let serial = std::env::var("RADB_TEST_SERIAL").ok()?;
-    radb::utils::start_adb_server_result().ok()?;
-    Some(AdbDevice::new(serial, DEFAULT_ADB_ADDR))
+fn configured_device() -> Result<Option<AdbDevice<&'static str>>, Box<dyn std::error::Error>> {
+    let Ok(serial) = std::env::var("RADB_TEST_SERIAL") else {
+        return Ok(None);
+    };
+    radb::utils::start_adb_server_result()?;
+    Ok(Some(AdbDevice::new(serial, DEFAULT_ADB_ADDR)))
 }
 
 #[tokio::test]
 async fn push_pull_round_trip_skips_without_radb_test_serial(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let Some(mut device) = configured_device() else {
+    let Some(mut device) = configured_device()? else {
         return Ok(());
     };
 
@@ -42,7 +44,7 @@ async fn push_pull_round_trip_skips_without_radb_test_serial(
 
 #[tokio::test]
 async fn screenshot_skips_without_radb_test_serial() -> Result<(), Box<dyn std::error::Error>> {
-    let Some(mut device) = configured_device() else {
+    let Some(mut device) = configured_device()? else {
         return Ok(());
     };
 

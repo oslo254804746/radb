@@ -21,6 +21,8 @@
 //! ### Blocking API
 //!
 //! ```rust,no_run
+//! # #[cfg(feature = "blocking")]
+//! # mod blocking_example {
 //! use radb::prelude::*;
 //!
 //! fn main() -> AdbResult<()> {
@@ -38,14 +40,17 @@
 //!     // Take screenshot
 //!     let screenshot = device.screenshot()?;
 //!     println!("Screenshot: {}x{}", screenshot.width(), screenshot.height());
-//!     
+//!
 //!     Ok(())
 //! }
+//! # }
 //! ```
 //!
 //! ### Async API
 //!
 //! ```rust,no_run
+//! # #[cfg(feature = "tokio_async")]
+//! # mod async_example {
 //! use radb::prelude::*;
 //! use radb::AdbResult;
 //! #[tokio::main]
@@ -62,13 +67,14 @@
 //!     println!("Output: {}", result);
 //!     
 //!     // Stream logcat
-//!     let mut logcat = device.logcat(true, None).await?;
-//!     while let Some(line) = logcat.next().await {
+//!     let mut logcat = Box::pin(device.logcat(true, None).await?);
+//!     while let Some(line) = logcat.as_mut().next().await {
 //!         println!("Log: {}", line?);
 //!     }
-//!     
+//!
 //!     Ok(())
 //! }
+//! # }
 //! ```
 //!
 //! ## Feature Flags
@@ -87,7 +93,12 @@
 //! ```rust,no_run
 //! use radb::prelude::*;
 //!
-//! match device.shell(["invalid_command"]) {
+//! let result: AdbResult<String> = Err(AdbError::command_failed(
+//!     "shell invalid_command",
+//!     "not found",
+//! ));
+//!
+//! match result {
 //!     Ok(output) => println!("Success: {}", output),
 //!     Err(AdbError::CommandFailed { command, reason }) => {
 //!         eprintln!("Command '{}' failed: {}", command, reason);

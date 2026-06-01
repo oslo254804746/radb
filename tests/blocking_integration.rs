@@ -5,15 +5,17 @@ use std::io::Write;
 
 const DEFAULT_ADB_ADDR: &str = "127.0.0.1:5037";
 
-fn configured_device() -> Option<AdbDevice<&'static str>> {
-    let serial = std::env::var("RADB_TEST_SERIAL").ok()?;
-    radb::utils::start_adb_server_result().ok()?;
-    Some(AdbDevice::new(serial, DEFAULT_ADB_ADDR))
+fn configured_device() -> Result<Option<AdbDevice<&'static str>>, Box<dyn std::error::Error>> {
+    let Ok(serial) = std::env::var("RADB_TEST_SERIAL") else {
+        return Ok(None);
+    };
+    radb::utils::start_adb_server_result()?;
+    Ok(Some(AdbDevice::new(serial, DEFAULT_ADB_ADDR)))
 }
 
 #[test]
 fn push_pull_round_trip_skips_without_radb_test_serial() -> Result<(), Box<dyn std::error::Error>> {
-    let Some(mut device) = configured_device() else {
+    let Some(mut device) = configured_device()? else {
         return Ok(());
     };
 
@@ -22,10 +24,7 @@ fn push_pull_round_trip_skips_without_radb_test_serial() -> Result<(), Box<dyn s
     local.write_all(&expected)?;
     local.flush()?;
 
-    let remote = format!(
-        "/data/local/tmp/radb-roundtrip-{}.bin",
-        std::process::id()
-    );
+    let remote = format!("/data/local/tmp/radb-roundtrip-{}.bin", std::process::id());
     let pulled_dir = tempfile::tempdir()?;
     let pulled_path = pulled_dir.path().join("pulled.bin");
 
@@ -41,7 +40,7 @@ fn push_pull_round_trip_skips_without_radb_test_serial() -> Result<(), Box<dyn s
 
 #[test]
 fn screenshot_skips_without_radb_test_serial() -> Result<(), Box<dyn std::error::Error>> {
-    let Some(mut device) = configured_device() else {
+    let Some(mut device) = configured_device()? else {
         return Ok(());
     };
 

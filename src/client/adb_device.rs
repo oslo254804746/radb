@@ -60,9 +60,9 @@ pub mod async_impl {
     use crate::beans::command::AdbCommand;
     use crate::beans::{parse_file_info, AppInfo, FileInfo, ForwardItem, NetworkType};
     use crate::client::common::{
-        self, DeviceTextCommand, build_forward_command, build_reverse_command,
-        build_uninstall_command, command_output_to_result, extract_forward_item_from_output,
-        extract_ip_from_output, extract_port_from_tcp_spec,
+        self, build_forward_command, build_reverse_command, build_uninstall_command,
+        command_output_to_result, extract_forward_item_from_output, extract_ip_from_output,
+        extract_port_from_tcp_spec, DeviceTextCommand,
     };
     use crate::client::AdbDevice;
     use crate::errors::{AdbError, AdbResult};
@@ -430,13 +430,25 @@ pub mod async_impl {
                         }
                     };
                     let payload_len = match connection.recv_exact(4).await {
-                        Ok(data) => match sync_protocol::parse_u32_le(&data) {
-                            Ok(size) => size as usize,
-                            Err(e) => {
-                                yield Err(e);
-                                break;
+                        Ok(data) => {
+                            let length = match data.try_into() {
+                                Ok(length) => length,
+                                Err(_) => {
+                                    yield Err(AdbError::protocol_error("Invalid sync frame length"));
+                                    break;
+                                }
+                            };
+                            match sync_protocol::parse_recv_frame_header(id, length) {
+                                Ok(sync_protocol::RecvFrameHeader::Done) => break,
+                                Ok(sync_protocol::RecvFrameHeader::Payload { payload_len, .. }) => {
+                                    payload_len
+                                }
+                                Err(e) => {
+                                    yield Err(e);
+                                    break;
+                                }
                             }
-                        },
+                        }
                         Err(e) => {
                             yield Err(e);
                             break;
@@ -683,7 +695,8 @@ pub mod async_impl {
         }
 
         pub async fn get_android_version(&mut self) -> AdbResult<String> {
-            self.run_text_command(DeviceTextCommand::AndroidVersion).await
+            self.run_text_command(DeviceTextCommand::AndroidVersion)
+                .await
         }
 
         pub async fn get_device_model(&mut self) -> AdbResult<String> {
@@ -698,7 +711,8 @@ pub mod async_impl {
                 .await
         }
         pub async fn get_device_product(&mut self) -> AdbResult<String> {
-            self.run_text_command(DeviceTextCommand::DeviceProduct).await
+            self.run_text_command(DeviceTextCommand::DeviceProduct)
+                .await
         }
 
         pub async fn get_device_abi(&mut self) -> AdbResult<String> {
@@ -759,9 +773,9 @@ pub mod async_impl {
 pub mod blocking_impl {
     use crate::beans::{parse_file_info, AppInfo, FileInfo, ForwardItem};
     use crate::client::common::{
-        self, DeviceTextCommand, build_forward_command, build_reverse_command,
-        build_uninstall_command, command_output_to_result, extract_forward_item_from_output,
-        extract_ip_from_output, extract_port_from_tcp_spec,
+        self, build_forward_command, build_reverse_command, build_uninstall_command,
+        command_output_to_result, extract_forward_item_from_output, extract_ip_from_output,
+        extract_port_from_tcp_spec, DeviceTextCommand,
     };
     use crate::client::AdbDevice;
     use crate::errors::{AdbError, AdbResult};

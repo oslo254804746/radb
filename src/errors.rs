@@ -347,4 +347,3 @@ mod tests {
         assert!(matches!(adb_err, AdbError::Anyhow(_)));
     }
 }
-

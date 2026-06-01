@@ -51,9 +51,7 @@ impl DeviceTextCommand {
             DeviceTextCommand::AndroidVersion => Some(&["getprop", "ro.build.version.release"]),
             DeviceTextCommand::DeviceModel => Some(&["getprop", "ro.product.model"]),
             DeviceTextCommand::DeviceBrand => Some(&["getprop", "ro.product.brand"]),
-            DeviceTextCommand::DeviceManufacturer => {
-                Some(&["getprop", "ro.product.manufacturer"])
-            }
+            DeviceTextCommand::DeviceManufacturer => Some(&["getprop", "ro.product.manufacturer"]),
             DeviceTextCommand::DeviceProduct => Some(&["getprop", "ro.product.product"]),
             DeviceTextCommand::DeviceAbi => Some(&["getprop", "ro.product.cpu.abi"]),
             _ => None,
