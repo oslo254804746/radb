@@ -1,4 +1,5 @@
 use crate::client::adb_device::AdbDevice;
+use crate::client::common;
 use std::fmt::Debug;
 
 #[cfg(feature = "tokio_async")]
@@ -24,15 +25,9 @@ impl AdbClient {
         T: ToSocketAddrs + Clone + Debug,
     {
         let mut devices = vec![];
-        if !lines.is_empty() {
-            lines.lines().into_iter().for_each(|line| {
-                let parts: Vec<&str> = line.split("\t").collect();
-                if !parts.is_empty() {
-                    let device = AdbDevice::new(parts[0], addr.clone());
-                    devices.push(device)
-                }
-            })
-        };
+        for entry in common::parse_device_list(lines) {
+            devices.push(AdbDevice::new(entry.serial, addr.clone()));
+        }
         Ok(devices)
     }
 }

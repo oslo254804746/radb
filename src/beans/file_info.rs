@@ -12,6 +12,13 @@ pub struct FileInfo {
 }
 
 pub fn parse_file_info<T: ToString>(data: Vec<u8>, path: T) -> Result<FileInfo> {
+    if data.len() < 12 {
+        return Err(anyhow!(
+            "file info buffer too short: expected at least 12 bytes, got {}",
+            data.len()
+        ));
+    }
+
     let mode_bytes = &data[0..4];
     let size_bytes = &data[4..8];
     let mtime_bytes = &data[8..12];

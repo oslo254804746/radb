@@ -102,6 +102,7 @@ pub mod beans;
 pub mod client;
 pub mod errors;
 pub mod protocols;
+pub mod sync_protocol;
 pub mod utils;
 
 // Re-exports for convenience

@@ -1,197 +1,12 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use crate::beans::app_info::AppInfo;
-use once_cell::sync::Lazy;
-
-use crate::beans::ForwardItem;
+use crate::client::common;
 use crate::errors::{AdbError, AdbResult};
-use regex::Regex;
 #[cfg(feature = "blocking")]
 use std::net::ToSocketAddrs;
 #[cfg(feature = "tokio_async")]
 use tokio::net::ToSocketAddrs;
-
-static IP_REGEXES: Lazy<Vec<(Regex, &'static str)>> = Lazy::new(|| {
-    vec![
-        (
-            Regex::new(r"inet\s+addr:([\d.]+)").unwrap(),
-            "ifconfig format",
-        ),
-        (
-            Regex::new(r"inet\s+([\d.]+)/\d+").unwrap(),
-            "ip command format",
-        ),
-        (
-            Regex::new(r"inet\s+([\d.]+)\s+netmask").unwrap(),
-            "alternative ifconfig format",
-        ),
-    ]
-});
-/// 从输出中提取IP地址的辅助函数
-fn extract_ip_from_output(output: &str) -> Option<String> {
-    for (regex, _description) in IP_REGEXES.iter() {
-        if let Some(captures) = regex.captures(output) {
-            if let Some(ip_match) = captures.get(1) {
-                let ip = ip_match.as_str();
-                // 验证IP地址格式
-                if is_valid_ipv4(ip) {
-                    return Some(ip.to_string());
-                }
-            }
-        }
-    }
-    None
-}
-
-fn extract_forward_item_from_output(output: String) -> AdbResult<Vec<ForwardItem>> {
-    let target = output
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 3 {
-                Some(ForwardItem::new(parts[0], parts[1], parts[2]))
-            } else {
-                log::warn!("Invalid forward list line: {}", line);
-                None
-            }
-        })
-        .collect();
-    Ok(target)
-}
-
-/// 验证IPv4地址格式
-fn is_valid_ipv4(ip: &str) -> bool {
-    let parts: Vec<&str> = ip.split('.').collect();
-    if parts.len() != 4 {
-        return false;
-    }
-
-    parts.iter().all(|&part| {
-        if let Ok(num) = part.parse::<u8>() {
-            num <= 255
-        } else {
-            false
-        }
-    })
-}
-
-/// 从TCP规格字符串中提取端口号
-fn extract_port_from_tcp_spec(tcp_spec: &str) -> Option<u16> {
-    if tcp_spec.starts_with("tcp:") {
-        tcp_spec[4..].parse().ok()
-    } else {
-        None
-    }
-}
-
-/// 转义shell参数
-fn escape_shell_arg(arg: &str) -> String {
-    if arg.is_empty() {
-        return "\"\"".to_string();
-    }
-
-    // 如果不包含特殊字符，直接返回
-    if !arg.chars().any(|c| " \"'\\$`(){}[]|&;<>?*~".contains(c)) {
-        return arg.to_string();
-    }
-
-    // 使用双引号包围并转义内部的特殊字符
-    let mut escaped = String::with_capacity(arg.len() + 10);
-    escaped.push('"');
-
-    for c in arg.chars() {
-        match c {
-            '"' => escaped.push_str("\\\""),
-            '\\' => escaped.push_str("\\\\"),
-            '$' => escaped.push_str("\\$"),
-            '`' => escaped.push_str("\\`"),
-            _ => escaped.push(c),
-        }
-    }
-
-    escaped.push('"');
-    escaped
-}
-
-/// 提取应用版本信息
-fn extract_app_version_info(output: &str, app_info: &mut AppInfo) {
-    // 版本名称
-    if let Ok(version_name_regex) = Regex::new(r"versionName=(\S+)") {
-        if let Some(cap) = version_name_regex.captures(output) {
-            if let Some(version_name) = cap.get(1) {
-                app_info.version_name = Some(version_name.as_str().to_string());
-            }
-        }
-    }
-
-    // 版本代码
-    if let Ok(version_code_regex) = Regex::new(r"versionCode=(\d+)") {
-        if let Some(cap) = version_code_regex.captures(output) {
-            if let Some(version_code) = cap.get(1) {
-                if let Ok(code) = version_code.as_str().parse::<u32>() {
-                    app_info.version_code = Some(code);
-                }
-            }
-        }
-    }
-}
-
-/// 提取应用签名信息
-fn extract_app_signature(output: &str, app_info: &mut AppInfo) {
-    if let Ok(signature_regex) = Regex::new(r"PackageSignatures\{[^}]*\[([^]]+)]") {
-        if let Some(cap) = signature_regex.captures(output) {
-            if let Some(signature) = cap.get(1) {
-                app_info.signature = Some(signature.as_str().to_string());
-            }
-        }
-    }
-}
-
-/// 提取应用标志信息
-fn extract_app_flags(output: &str, app_info: &mut AppInfo) {
-    if let Ok(flags_regex) = Regex::new(r"pkgFlags=\[\s*([^]]+)\s*]") {
-        if let Some(cap) = flags_regex.captures(output) {
-            if let Some(flags_str) = cap.get(1) {
-                let flags: Vec<String> = flags_str
-                    .as_str()
-                    .split_whitespace()
-                    .map(|s| s.to_string())
-                    .collect();
-                app_info.flags = flags;
-            }
-        }
-    }
-}
-
-/// 提取应用时间戳信息
-fn extract_app_timestamps(output: &str, app_info: &mut AppInfo) {
-    use chrono::DateTime;
-    use std::str::FromStr;
-
-    // 首次安装时间
-    if let Ok(first_install_regex) = Regex::new(r"firstInstallTime=([\d-]+\s+[:\d]+)") {
-        if let Some(cap) = first_install_regex.captures(output) {
-            if let Some(time_str) = cap.get(1) {
-                if let Ok(datetime) = DateTime::from_str(time_str.as_str()) {
-                    app_info.first_install_time = Some(datetime);
-                }
-            }
-        }
-    }
-
-    // 最后更新时间
-    if let Ok(last_update_regex) = Regex::new(r"lastUpdateTime=([\d-]+\s+[:\d]+)") {
-        if let Some(cap) = last_update_regex.captures(output) {
-            if let Some(time_str) = cap.get(1) {
-                if let Ok(datetime) = DateTime::from_str(time_str.as_str()) {
-                    app_info.last_update_time = Some(datetime);
-                }
-            }
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct AdbDevice<T>
@@ -229,35 +44,12 @@ where
     /// - `command`：可选的命令字符串，如果提供，将被添加到返回的字符串中。
     /// - 返回值：构建好的字符串，或者在某些条件下返回错误。
     pub fn get_open_transport_prefix(&self, command: Option<&str>) -> AdbResult<String> {
-        // 检查序列号和传输ID，不能同时为None
-        if self.serial.is_none() & self.transport_id.is_none() {
-            return Err(AdbError::protocol_error(
-                "TransportID and Serial Can Not Been None At Same Time",
-            ));
-        }
-        // 根据是否提供了命令和是否有传输ID来决定返回字符串的格式
-        if let Some(command) = command {
-            if let Some(ref transport_id) = self.transport_id {
-                Ok(format!("host-transport-id:{}:{}", transport_id, command))
-            } else {
-                Ok(format!(
-                    "host-serial:{}:{}",
-                    self.serial.clone().unwrap(),
-                    command
-                ))
-            }
-        } else {
-            if let Some(ref transport_id) = self.transport_id {
-                Ok(format!("host-transport-id:{}", transport_id))
-            } else {
-                Ok(format!("host:transport:{}", self.serial.clone().unwrap()))
-            }
-        }
+        common::build_transport_prefix(self.serial.as_deref(), self.transport_id, command)
     }
 
     pub fn list2cmdline(args: &[&str]) -> String {
         args.iter()
-            .map(|&arg| escape_shell_arg(arg))
+            .map(|&arg| common::escape_shell_arg(arg))
             .collect::<Vec<_>>()
             .join(" ")
     }
@@ -267,13 +59,15 @@ where
 pub mod async_impl {
     use crate::beans::command::AdbCommand;
     use crate::beans::{parse_file_info, AppInfo, FileInfo, ForwardItem, NetworkType};
-    use crate::client::adb_device::{
-        extract_app_flags, extract_app_signature, extract_app_timestamps, extract_app_version_info,
-        extract_forward_item_from_output, extract_ip_from_output, extract_port_from_tcp_spec,
+    use crate::client::common::{
+        self, DeviceTextCommand, build_forward_command, build_reverse_command,
+        build_uninstall_command, command_output_to_result, extract_forward_item_from_output,
+        extract_ip_from_output, extract_port_from_tcp_spec,
     };
     use crate::client::AdbDevice;
     use crate::errors::{AdbError, AdbResult};
     use crate::protocols::AdbProtocol;
+    use crate::sync_protocol::{self, RecvFrame};
     use crate::utils::adb_path;
     use anyhow::{anyhow, Context};
     use async_stream::stream;
@@ -310,25 +104,39 @@ pub mod async_impl {
             Ok(result)
         }
 
+        async fn run_text_command(&mut self, command: DeviceTextCommand) -> AdbResult<String> {
+            match command.transport_command() {
+                Some(cmd) => self.get_with_command(cmd).await,
+                None => {
+                    let out = self.shell(command.shell_args().unwrap()).await?;
+                    if command.trim_output() {
+                        Ok(out.trim().to_string())
+                    } else {
+                        Ok(out)
+                    }
+                }
+            }
+        }
+
         ///
         /// 与 命令 adb get-state 相同  => device
         pub async fn get_state(&mut self) -> AdbResult<String> {
-            self.get_with_command("get-state").await
+            self.run_text_command(DeviceTextCommand::State).await
         }
 
         ///
         /// adb get-serialno => emulator-5554
         pub async fn get_serialno(&mut self) -> AdbResult<String> {
-            self.get_with_command("get-serialno").await
+            self.run_text_command(DeviceTextCommand::SerialNo).await
         }
 
         ///adb get-devpath
         pub async fn get_devpath(&mut self) -> AdbResult<String> {
-            self.get_with_command("get-devpath").await
+            self.run_text_command(DeviceTextCommand::DevPath).await
         }
 
         pub async fn get_features(&mut self) -> AdbResult<String> {
-            self.get_with_command("get-features").await
+            self.run_text_command(DeviceTextCommand::Features).await
         }
 
         /// 执行通过ADB shell命令流，并返回一个AdbConnection的实例。
@@ -386,23 +194,15 @@ pub mod async_impl {
             remote: &str,
             norebind: bool,
         ) -> AdbResult<()> {
-            let mut args = vec!["forward"];
-            if norebind {
-                args.push("norebind");
-            }
-            let forward_str = format!("{};{}", local, remote);
-            args.push(&forward_str);
-            let full_cmd = args.join(":");
-            if let Ok(_) = self.open_transport(Some(&full_cmd)).await {
-                return Ok(());
-            }
-            Err(AdbError::from_display("Failed To Forward Port"))
+            let full_cmd = build_forward_command(local, remote, norebind);
+            self.open_transport(Some(&full_cmd)).await?;
+            Ok(())
         }
 
         pub async fn forward_list(&mut self) -> AdbResult<Vec<ForwardItem>> {
             let mut connection = self.open_transport(Some("list-forward")).await?;
             let content = connection.read_response().await?;
-            extract_forward_item_from_output(content)
+            Ok(extract_forward_item_from_output(&content))
         }
         pub async fn forward_remote_port(&mut self, remote_port: u16) -> AdbResult<u16> {
             let remote = format!("tcp:{}", remote_port);
@@ -437,14 +237,7 @@ pub mod async_impl {
             local: &str,
             norebind: bool,
         ) -> AdbResult<()> {
-            let mut args = vec!["forward"];
-            if norebind {
-                args.push("norebind");
-            }
-            args.push(local);
-            args.push(";");
-            args.push(remote);
-            let full_cmd = args.join(":");
+            let full_cmd = build_reverse_command(remote, local, norebind);
             self.open_transport(Some(&full_cmd)).await?;
             Ok(())
         }
@@ -477,7 +270,7 @@ pub mod async_impl {
                         .args(command)
                         .output()
                         .await?;
-                    return Ok(String::from_utf8_lossy(&cmd.stdout).to_string());
+                    return command_output_to_result(command, cmd);
                 }
             };
             Err(AdbError::from_display("adb not found"))
@@ -498,23 +291,21 @@ pub mod async_impl {
         }
 
         pub async fn push(&mut self, local: &str, remote: &str) -> AdbResult<()> {
-            if self.adb_output(&["push", local, remote]).await.is_ok() {
-                info!("push {} to {} success", local, remote);
-                return Ok(());
-            }
-            Err(AdbError::from_display("push error"))
+            self.adb_output(&["push", local, remote]).await?;
+            info!("push {} to {} success", local, remote);
+            Ok(())
         }
+
         pub async fn pull(&mut self, src: &str, dest: &PathBuf) -> AdbResult<usize> {
             let mut size = 0;
-            let mut file = match File::open(dest) {
-                Ok(mut file) => file,
-                Err(_) => File::create(dest)?,
-            };
-            let _ = self.iter_content(src).await?.map(|x| {
-                let data = x.unwrap();
-                file.write_all(&data).unwrap();
+            let mut file = File::create(dest)?;
+            let stream = self.iter_content(src).await?;
+            pin_mut!(stream);
+            while let Some(chunk) = stream.next().await {
+                let data = chunk?;
+                file.write_all(&data)?;
                 size += data.len();
-            });
+            }
             Ok(size)
         }
 
@@ -588,7 +379,7 @@ pub mod async_impl {
         pub async fn read_text(
             &mut self,
             path: &str,
-        ) -> AdbResult<impl Stream<Item = anyhow::Result<String>>> {
+        ) -> AdbResult<impl Stream<Item = AdbResult<String>>> {
             let stream = self.iter_content(path).await?;
             Ok(stream! {
                 pin_mut!(stream);
@@ -610,66 +401,70 @@ pub mod async_impl {
             info!("Start Sync Path {:#?} With Command {:#?}", path, command);
             let mut conn = self.open_transport(None).await?;
             conn.send_cmd_then_check_okay("sync:").await?;
-            let path_len = path.as_bytes().len() as u32;
-            let mut total_byte = vec![];
-            total_byte.extend_from_slice(command.as_bytes());
-            total_byte.extend_from_slice(&path_len.to_le_bytes());
-            total_byte.extend_from_slice(path.as_bytes());
-            conn.send(&total_byte).await?;
+            let command_id: [u8; 4] = command
+                .as_bytes()
+                .try_into()
+                .map_err(|_| AdbError::protocol_error("sync command must be 4 bytes"))?;
+            let total_byte = sync_protocol::encode_path_command(&command_id, path);
+            conn.send_all(&total_byte).await?;
             Ok(conn)
         }
 
         pub async fn iter_content(
             &mut self,
             path: &str,
-        ) -> AdbResult<impl Stream<Item = anyhow::Result<Vec<u8>>>> {
+        ) -> AdbResult<impl Stream<Item = AdbResult<Vec<u8>>>> {
             let mut connection = self.prepare_sync(path, "RECV").await?;
             Ok(stream! {
-                            loop{
-                                match connection.read_string(4).await {
-                                    Err(e) => {
-                                        yield Err(anyhow!("Read String Error {}", e));
-                                        break;
-                                    },
-                                    Ok(data) =>  {
-                                        let match_resp = match data.as_str() {
-                                        "FAIL" => match connection.recv(4).await {
-                                            Err(e) => {
-                                                Err(anyhow!("Read String Error {}", e))
-                                            },
-                                            Ok(data) => {
-                                                let str_size = u32::from_le_bytes(data.try_into().ok().unwrap()) as usize;
-                                                let error_message = connection.read_string(str_size).await.ok().unwrap();
-                                                error!("Sync Error With Error Message >>> {}", &error_message);
-                                                Err(anyhow!("Read String Error {}", error_message))
-
-                                            }
-                                        },
-                                        "DONE" => {
-                                            Err(anyhow!("Read Done"))
-                                        }
-                                        "DATA" => match connection.recv(4).await {
-                                            Ok(size) => {
-                                                let str_size = u32::from_le_bytes(size.try_into().ok().unwrap()) as usize;
-                                                let mut buffer = vec![0; str_size];
-                                                match connection.read_exact(& mut buffer).await {
-                                                    Ok(data) => Ok(buffer[..data].to_vec()),
-                                                    Err(e) => Err(anyhow!("Read String Error {}", e)),
-                                                }
-                                            }
-                                            Err(e) => Err(anyhow!("Read String Error {}", e)),
-                                        },
-                                        _ => Err(anyhow!("Read String Error ")),
-                                    };
-                                    if match_resp.is_err(){
-                                        yield match_resp;
-                                        break;
-                                    }
-                                yield match_resp
+                loop {
+                    let id = match connection.recv_exact(4).await {
+                        Ok(data) => match data.try_into() {
+                            Ok(id) => id,
+                            Err(_) => {
+                                yield Err(AdbError::protocol_error("Invalid sync frame id"));
+                                break;
                             }
-                                }
-            }
-                })
+                        },
+                        Err(e) => {
+                            yield Err(e);
+                            break;
+                        }
+                    };
+                    let payload_len = match connection.recv_exact(4).await {
+                        Ok(data) => match sync_protocol::parse_u32_le(&data) {
+                            Ok(size) => size as usize,
+                            Err(e) => {
+                                yield Err(e);
+                                break;
+                            }
+                        },
+                        Err(e) => {
+                            yield Err(e);
+                            break;
+                        }
+                    };
+                    let payload = match connection.recv_exact(payload_len).await {
+                        Ok(payload) => payload,
+                        Err(e) => {
+                            yield Err(e);
+                            break;
+                        }
+                    };
+
+                    match sync_protocol::parse_recv_frame(id, payload) {
+                        Ok(RecvFrame::Data(data)) => yield Ok(data),
+                        Ok(RecvFrame::Done) => break,
+                        Ok(RecvFrame::Fail(message)) => {
+                            yield Err(AdbError::protocol_error(message));
+                            break;
+                        }
+                        Err(e) => {
+                            yield Err(e);
+                            break;
+                        }
+                    }
+                }
+            })
         }
 
         pub async fn screenshot(&mut self) -> AdbResult<RgbImage> {
@@ -701,24 +496,30 @@ pub mod async_impl {
         }
 
         pub async fn install(&mut self, path_or_url: &str) -> AdbResult<()> {
-            let target_path =
-                if path_or_url.starts_with("http://") || path_or_url.starts_with("https://") {
-                    let mut resp = reqwest::get(path_or_url)
-                        .await
-                        .context("Fail to get http response")?;
-                    let response_bytes = resp.bytes().await.context("Fail to get bytes")?;
-                    let temp_dir = tempfile::tempdir()?.path().join("tmp001.apk");
-                    let mut fd = File::create(&temp_dir)?;
-                    fd.write_all(&response_bytes)?;
-                    let target_path = temp_dir.to_str().ok_or(anyhow!("fail to get path"))?;
-                    info!(
-                        "Save Http/s file to  <{:#?}> => dst: <{:#?}>",
-                        &path_or_url, &target_path
-                    );
-                    target_path.to_string()
-                } else {
-                    path_or_url.to_string()
-                };
+            let _temp_dir_guard;
+            let target_path;
+            if path_or_url.starts_with("http://") || path_or_url.starts_with("https://") {
+                let resp = reqwest::get(path_or_url)
+                    .await
+                    .context("Fail to get http response")?;
+                let response_bytes = resp.bytes().await.context("Fail to get bytes")?;
+                let temp_dir = tempfile::tempdir()?;
+                let temp_path = temp_dir.path().join("tmp001.apk");
+                let mut fd = File::create(&temp_path)?;
+                fd.write_all(&response_bytes)?;
+                target_path = temp_path
+                    .to_str()
+                    .ok_or(anyhow!("fail to get path"))?
+                    .to_string();
+                info!(
+                    "Save Http/s file to  <{:#?}> => dst: <{:#?}>",
+                    &path_or_url, &target_path
+                );
+                _temp_dir_guard = Some(temp_dir);
+            } else {
+                target_path = path_or_url.to_string();
+                _temp_dir_guard = None;
+            }
             let dst = format!(
                 "/data/local/tmp/tmp-{}.apk",
                 (time::SystemTime::now()
@@ -836,7 +637,7 @@ pub mod async_impl {
         }
 
         pub async fn uninstall(&mut self, package_name: &str) -> AdbResult<String> {
-            self.shell(["am", "uninstall", package_name]).await
+            self.shell(build_uninstall_command(package_name)).await
         }
 
         pub async fn app_start(&mut self, package_name: &str) -> AdbResult<String> {
@@ -867,15 +668,7 @@ pub mod async_impl {
                 .await
                 .ok()?;
 
-            let mut app_info = AppInfo::new(package_name);
-
-            // 使用更健壮的正则表达式匹配
-            extract_app_version_info(&app_info_output, &mut app_info);
-            extract_app_signature(&app_info_output, &mut app_info);
-            extract_app_flags(&app_info_output, &mut app_info);
-            extract_app_timestamps(&app_info_output, &mut app_info);
-
-            Some(app_info)
+            Some(common::populate_app_info(package_name, &app_info_output))
         }
         pub async fn if_screen_on(&mut self) -> AdbResult<bool> {
             let resp = self.shell(["dumpsys", "power"]).await?;
@@ -887,31 +680,30 @@ pub mod async_impl {
         }
 
         pub async fn get_sdk_version(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.build.version.sdk"]).await
+            self.run_text_command(DeviceTextCommand::SdkVersion).await
         }
 
         pub async fn get_android_version(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.build.version.release"])
-                .await
+            self.run_text_command(DeviceTextCommand::AndroidVersion).await
         }
 
         pub async fn get_device_model(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.product.model"]).await
+            self.run_text_command(DeviceTextCommand::DeviceModel).await
         }
 
         pub async fn get_device_brand(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.product.brand"]).await
+            self.run_text_command(DeviceTextCommand::DeviceBrand).await
         }
         pub async fn get_device_manufacturer(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.product.manufacturer"])
+            self.run_text_command(DeviceTextCommand::DeviceManufacturer)
                 .await
         }
         pub async fn get_device_product(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.product.product"]).await
+            self.run_text_command(DeviceTextCommand::DeviceProduct).await
         }
 
         pub async fn get_device_abi(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.product.cpu.abi"]).await
+            self.run_text_command(DeviceTextCommand::DeviceAbi).await
         }
 
         pub async fn get_device_gpu(&mut self) -> AdbResult<String> {
@@ -970,13 +762,15 @@ pub mod async_impl {
 #[cfg(feature = "blocking")]
 pub mod blocking_impl {
     use crate::beans::{parse_file_info, AppInfo, FileInfo, ForwardItem};
-    use crate::client::adb_device::{
-        extract_app_flags, extract_app_signature, extract_app_timestamps, extract_app_version_info,
-        extract_forward_item_from_output, extract_ip_from_output, extract_port_from_tcp_spec,
+    use crate::client::common::{
+        self, DeviceTextCommand, build_forward_command, build_reverse_command,
+        build_uninstall_command, command_output_to_result, extract_forward_item_from_output,
+        extract_ip_from_output, extract_port_from_tcp_spec,
     };
     use crate::client::AdbDevice;
     use crate::errors::{AdbError, AdbResult};
     use crate::protocols::AdbProtocol;
+    use crate::sync_protocol::{self, RecvFrame};
     use crate::utils::{adb_path, get_free_port};
     use anyhow::Context;
 
@@ -989,7 +783,6 @@ pub mod blocking_impl {
     use std::path::PathBuf;
 
     use crate::beans::command::AdbCommand;
-    use std::sync::{Arc, RwLock};
     use std::{fs, time};
 
     pub struct LogcatIterator {
@@ -1038,20 +831,34 @@ pub mod blocking_impl {
             Ok(result)
         }
 
+        fn run_text_command(&mut self, command: DeviceTextCommand) -> AdbResult<String> {
+            match command.transport_command() {
+                Some(cmd) => self.get_with_command(cmd),
+                None => {
+                    let out = self.shell(command.shell_args().unwrap())?;
+                    if command.trim_output() {
+                        Ok(out.trim().to_string())
+                    } else {
+                        Ok(out)
+                    }
+                }
+            }
+        }
+
         pub fn get_state(&mut self) -> AdbResult<String> {
-            self.get_with_command("get-state")
+            self.run_text_command(DeviceTextCommand::State)
         }
 
         pub fn get_serialno(&mut self) -> AdbResult<String> {
-            self.get_with_command("get-serialno")
+            self.run_text_command(DeviceTextCommand::SerialNo)
         }
 
         pub fn get_devpath(&mut self) -> AdbResult<String> {
-            self.get_with_command("get-devpath")
+            self.run_text_command(DeviceTextCommand::DevPath)
         }
 
         pub fn get_features(&mut self) -> AdbResult<String> {
-            self.get_with_command("get-features")
+            self.run_text_command(DeviceTextCommand::Features)
         }
 
         /// 执行通过ADB shell命令流，并返回一个AdbConnection的实例。
@@ -1104,23 +911,15 @@ pub mod blocking_impl {
         }
 
         pub fn forward(&mut self, local: &str, remote: &str, norebind: bool) -> AdbResult<()> {
-            let mut args = vec!["forward"];
-            if norebind {
-                args.push("norebind");
-            }
-            let forward_str = format!("{};{}", local, remote);
-            args.push(&forward_str);
-            let full_cmd = args.join(":");
-            if let Ok(_) = self.open_transport(Some(&full_cmd)) {
-                return Ok(());
-            }
-            Err(AdbError::from_display("Failed To Forward Port"))
+            let full_cmd = build_forward_command(local, remote, norebind);
+            self.open_transport(Some(&full_cmd))?;
+            Ok(())
         }
 
         pub fn forward_list(&mut self) -> AdbResult<Vec<ForwardItem>> {
             let mut connection = self.open_transport(Some("list-forward"))?;
             let content = connection.read_response()?;
-            extract_forward_item_from_output(content)
+            Ok(extract_forward_item_from_output(&content))
         }
         pub fn forward_remote_port(&mut self, remote: u16) -> AdbResult<u16> {
             let remote = format!("tcp:{}", remote);
@@ -1149,14 +948,7 @@ pub mod blocking_impl {
         }
 
         pub fn reverse(&mut self, remote: &str, local: &str, norebind: bool) -> AdbResult<()> {
-            let mut args = vec!["forward"];
-            if norebind {
-                args.push("norebind");
-            }
-            args.push(local);
-            args.push(";");
-            args.push(remote);
-            let full_cmd = args.join(":");
+            let full_cmd = build_reverse_command(remote, local, norebind);
             self.open_transport(Some(&full_cmd))?;
             Ok(())
         }
@@ -1171,8 +963,8 @@ pub mod blocking_impl {
                     cmd.arg(x);
                 }
                 info!("{:?}", &cmd);
-                let output = cmd.output().expect("failed to execute process");
-                return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+                let output = cmd.output()?;
+                return command_output_to_result(command, output);
             };
             Err(AdbError::from_display("adb not found"))
         }
@@ -1189,25 +981,22 @@ pub mod blocking_impl {
             Ok(resp)
         }
         pub fn push(&mut self, local: &str, remote: &str) -> AdbResult<()> {
-            if self.adb_output(&["push", local, remote]).is_ok() {
-                info!("push {} to {} success", local, remote);
-                return Ok(());
-            }
-            Err(AdbError::from_display("push error"))
+            self.adb_output(&["push", local, remote])?;
+            info!("push {} to {} success", local, remote);
+            Ok(())
         }
         pub fn pull(&mut self, src: &str, dest: &PathBuf) -> AdbResult<usize> {
             let mut size = 0;
-            let mut file = match File::open(dest) {
-                Ok(mut file) => file,
-                Err(_) => File::create(dest)?,
-            };
-            self.iter_content(src)?.for_each(|content| match content {
-                Ok(content) => {
-                    file.write_all(content.as_bytes()).unwrap();
-                    size += content.len();
+            let mut file = File::create(dest)?;
+            for content in self.iter_content(src)? {
+                match content {
+                    Ok(content) => {
+                        file.write_all(&content)?;
+                        size += content.len();
+                    }
+                    Err(e) => return Err(e),
                 }
-                Err(_) => {}
-            });
+            }
             Ok(size)
         }
 
@@ -1254,11 +1043,11 @@ pub mod blocking_impl {
         }
 
         pub fn read_text(&mut self, path: &str) -> AdbResult<String> {
-            let data = self
+            let chunks = self
                 .iter_content(path)?
-                .map(|x| x.unwrap_or_else(|_| "".to_string()))
-                .collect::<Vec<String>>();
-            Ok(data.join(""))
+                .collect::<AdbResult<Vec<Vec<u8>>>>()?;
+            let bytes = chunks.concat();
+            Ok(String::from_utf8_lossy(&bytes).to_string())
         }
 
         pub fn prepare_sync(&mut self, path: &str, command: &str) -> AdbResult<TcpStream> {
@@ -1266,59 +1055,41 @@ pub mod blocking_impl {
             let mut conn = self.open_transport(None)?;
             conn.send_cmd_then_check_okay("sync:")
                 .context("Start Sync Error")?;
-            let path_len = path.as_bytes().len() as u32;
-            let mut total_byte = vec![];
-            total_byte.extend_from_slice(command.as_bytes());
-            total_byte.extend_from_slice(&path_len.to_le_bytes());
-            total_byte.extend_from_slice(path.as_bytes());
-            conn.send(&total_byte)?;
+            let command_id: [u8; 4] = command
+                .as_bytes()
+                .try_into()
+                .map_err(|_| AdbError::protocol_error("sync command must be 4 bytes"))?;
+            let total_byte = sync_protocol::encode_path_command(&command_id, path);
+            conn.send_all(&total_byte)?;
             Ok(conn)
         }
 
         pub fn iter_content(
             &mut self,
             path: &str,
-        ) -> AdbResult<impl Iterator<Item = AdbResult<String>>> {
+        ) -> AdbResult<impl Iterator<Item = AdbResult<Vec<u8>>>> {
             if let Ok(mut connection) = self.prepare_sync(path, "RECV") {
                 let mut done = false;
                 return Ok(std::iter::from_fn(move || {
                     if done {
                         return None;
                     }
-                    return match connection.read_string(4) {
-                        Err(_) => None,
-                        Ok(data) => match data.as_str() {
-                            "FAIL" => match connection.recv(4) {
-                                Err(_) => None,
-                                Ok(data) => {
-                                    let str_size =
-                                        u32::from_le_bytes(data.try_into().ok()?) as usize;
-                                    let error_message = connection.read_string(str_size).ok()?;
-                                    error!(
-                                        "Sync Error With Error Message >>> {:#?}",
-                                        error_message
-                                    );
-                                    None
-                                }
-                            },
-                            "DONE" => {
-                                done = true;
-                                None
-                            }
-                            "DATA" => match connection.recv(4) {
-                                Ok(size) => {
-                                    let str_size =
-                                        u32::from_le_bytes(size.try_into().ok()?) as usize;
-                                    match connection.read_string(str_size) {
-                                        Ok(data) => Some(Ok(data)),
-                                        Err(_) => None,
-                                    }
-                                }
-                                Err(_) => None,
-                            },
-                            _ => None,
-                        },
-                    };
+                    match sync_protocol::read_recv_frame(&mut connection) {
+                        Ok(RecvFrame::Data(data)) => Some(Ok(data)),
+                        Ok(RecvFrame::Done) => {
+                            done = true;
+                            None
+                        }
+                        Ok(RecvFrame::Fail(message)) => {
+                            done = true;
+                            error!("Sync Error With Error Message >>> {:#?}", message);
+                            Some(Err(AdbError::protocol_error(message)))
+                        }
+                        Err(e) => {
+                            done = true;
+                            Some(Err(e))
+                        }
+                    }
                 }));
             }
             Err(AdbError::from_display("iter_content error"))
@@ -1353,26 +1124,31 @@ pub mod blocking_impl {
         }
 
         pub fn install(&mut self, path_or_url: &str) -> AdbResult<()> {
-            let target_path = if path_or_url.starts_with("http://")
-                || path_or_url.starts_with("https://")
-            {
+            let _temp_dir_guard;
+            let target_path;
+            if path_or_url.starts_with("http://") || path_or_url.starts_with("https://") {
                 let mut resp = reqwest::blocking::get(path_or_url).context("Http Request Error")?;
                 let mut buffer = Vec::new();
                 resp.read_to_end(&mut buffer)?;
-                let temp_dir = tempfile::tempdir()?.path().join("tmp001.apk");
-                let mut fd = File::create(&temp_dir)?;
+                let temp_dir = tempfile::tempdir()?;
+                let temp_path = temp_dir.path().join("tmp001.apk");
+                let mut fd = File::create(&temp_path)?;
                 fd.write_all(&buffer)?;
-                let target_path = temp_dir.to_str().ok_or(AdbError::file_operation_failed(
-                    "getTempDir",
-                    "fail to get path",
-                ))?;
+                target_path = temp_path
+                    .to_str()
+                    .ok_or(AdbError::file_operation_failed(
+                        "getTempDir",
+                        "fail to get path",
+                    ))?
+                    .to_string();
                 info!(
                     "Save Http/s file to  <{:#?}> => dst: <{:#?}>",
                     &path_or_url, &target_path
                 );
-                target_path.to_string()
+                _temp_dir_guard = Some(temp_dir);
             } else {
-                path_or_url.to_string()
+                target_path = path_or_url.to_string();
+                _temp_dir_guard = None;
             };
             let dst = format!(
                 "/data/local/tmp/tmp-{}.apk",
@@ -1484,7 +1260,7 @@ pub mod blocking_impl {
         }
 
         pub fn uninstall(&mut self, package_name: &str) -> AdbResult<String> {
-            self.shell(["am", "uninstall", package_name])
+            self.shell(build_uninstall_command(package_name))
         }
 
         pub fn app_start(&mut self, package_name: &str) -> AdbResult<String> {
@@ -1511,15 +1287,7 @@ pub mod blocking_impl {
                 .shell(["dumpsys", "package", package_name]) // 修复：pacakge -> package
                 .ok()?;
 
-            let mut app_info = AppInfo::new(package_name);
-
-            // 使用更健壮的正则表达式匹配
-            extract_app_version_info(&app_info_output, &mut app_info);
-            extract_app_signature(&app_info_output, &mut app_info);
-            extract_app_flags(&app_info_output, &mut app_info);
-            extract_app_timestamps(&app_info_output, &mut app_info);
-
-            Some(app_info)
+            Some(common::populate_app_info(package_name, &app_info_output))
         }
 
         pub fn if_screen_on(&mut self) -> AdbResult<bool> {
@@ -1532,29 +1300,29 @@ pub mod blocking_impl {
         }
 
         pub fn get_sdk_version(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.build.version.sdk"])
+            self.run_text_command(DeviceTextCommand::SdkVersion)
         }
 
         pub fn get_android_version(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.build.version.release"])
+            self.run_text_command(DeviceTextCommand::AndroidVersion)
         }
 
         pub fn get_device_model(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.product.model"])
+            self.run_text_command(DeviceTextCommand::DeviceModel)
         }
 
         pub fn get_device_brand(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.product.brand"])
+            self.run_text_command(DeviceTextCommand::DeviceBrand)
         }
         pub fn get_device_manufacturer(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.product.manufacturer"])
+            self.run_text_command(DeviceTextCommand::DeviceManufacturer)
         }
         pub fn get_device_product(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.product.product"])
+            self.run_text_command(DeviceTextCommand::DeviceProduct)
         }
 
         pub fn get_device_abi(&mut self) -> AdbResult<String> {
-            self.shell_trim(["getprop", "ro.product.cpu.abi"])
+            self.run_text_command(DeviceTextCommand::DeviceAbi)
         }
 
         pub fn get_device_gpu(&mut self) -> AdbResult<String> {
