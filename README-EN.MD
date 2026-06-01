@@ -71,7 +71,7 @@ async fn main() -> AdbResult<()> {
 | ✅ ADB Server Control | Get version, start/stop server, connect/disconnect devices |
 | ✅ Shell Execution | Run shell commands on device |
 | ✅ File Operations | Push files to device, pull files from device, list directory contents |
-| ✅ Network Control | Set TCP/IP mode, port forwarding |
+| ✅ Network Control | Set TCP/IP mode, port forwarding, and reverse forwarding |
 | ✅ UI Automation | Simulate click, swipe, key events |
 | ✅ App Management | Install, uninstall applications |
 | ✅ Log Capture | Real-time device log capture (logcat) |

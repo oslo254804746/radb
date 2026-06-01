@@ -12,7 +12,7 @@
 //! - **Shell Commands**: Execute shell commands with streaming support
 //! - **Screen Operations**: Screenshots, input simulation, and screen control
 //! - **App Management**: Install, uninstall, start, and stop applications
-//! - **Network Operations**: Port forwarding, WiFi control, and network information
+//! - **Network Operations**: Port forwarding, reverse forwarding, WiFi control, and network information
 //! - **System Information**: Device properties, Android version, hardware info
 //! - **Logging**: Logcat streaming and filtering
 //!
