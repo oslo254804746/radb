@@ -63,11 +63,6 @@ pub enum AdbError {
     #[error("Parse number error: {0}")]
     ParseInt(#[from] std::num::ParseIntError),
 
-    /// JSON解析错误
-    #[cfg(feature = "serde")]
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-
     /// 时间相关错误
     #[error("Time error: {0}")]
     SystemTime(#[from] std::time::SystemTimeError),
@@ -214,8 +209,6 @@ impl AdbError {
             AdbError::Regex(_) => "REGEX_ERROR",
             AdbError::Utf8(_) => "UTF8_ERROR",
             AdbError::ParseInt(_) => "PARSE_INT_ERROR",
-            #[cfg(feature = "serde")]
-            AdbError::Json(_) => "JSON_ERROR",
             AdbError::SystemTime(_) => "SYSTEM_TIME_ERROR",
             AdbError::Anyhow(_) => "ANYHOW_ERROR",
             AdbError::Unknown { .. } => "UNKNOWN_ERROR",
@@ -352,31 +345,5 @@ mod tests {
         let anyhow_err = anyhow::anyhow!("Some error");
         let adb_err: AdbError = anyhow_err.into();
         assert!(matches!(adb_err, AdbError::Anyhow(_)));
-    }
-}
-
-// 使用示例
-mod examples {
-    use super::*;
-    use anyhow::Context;
-
-    // 示例函数，展示如何使用改进的错误处理
-    async fn example_function() -> AdbResult<()> {
-        // 方法1：使用 #[from] 自动转换（推荐）
-        let _result = some_anyhow_function().context("Failed to create port forward")?;
-
-        // 方法2：使用扩展trait方法
-        let _result = some_anyhow_function()
-            .with_adb_context(|| "Failed to create port forward".to_string())?;
-
-        // 方法3：使用便利宏
-        let _result = adb_context!(some_anyhow_function(), "Failed to create port forward")?;
-
-        Ok(())
-    }
-
-    // 模拟返回anyhow::Result的函数
-    fn some_anyhow_function() -> anyhow::Result<()> {
-        Ok(())
     }
 }

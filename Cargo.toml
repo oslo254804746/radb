@@ -1,6 +1,6 @@
 [package]
 name = "radb"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 authors = ["OKIAAAA"]
 readme = "README.md"
@@ -36,3 +36,5 @@ default = ["blocking"]
 tokio_async = ["futures-core", "futures-util", "async-stream", "async-trait", "tokio"]
 blocking = []
 
+[dev-dependencies]
+doc-comment = "0.3.3"

@@ -1,22 +1,19 @@
 use crate::errors::{AdbError, AdbResult};
-use anyhow::{anyhow, Context};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::Command;
-use tracing::Level;
 use which::which;
 
 #[cfg(windows)]
-const ADB_EXECUTE_FILE_NAME: &'static str = "adb.exe";
+const ADB_EXECUTE_FILE_NAME: &str = "adb.exe";
 #[cfg(not(windows))]
-const ADB_EXECUTE_FILE_NAME: &'static str = "adb";
+const ADB_EXECUTE_FILE_NAME: &str = "adb";
 
-const ADBUTILS_ADB_PATH: &'static str = "ADBUTILS_ADB_PATH";
+const ADBUTILS_ADB_PATH: &str = "ADBUTILS_ADB_PATH";
 
 pub fn adb_path() -> AdbResult<PathBuf> {
-    let adb_env = std::env::var(ADBUTILS_ADB_PATH);
-    if adb_env.is_ok() {
-        Ok(PathBuf::from(adb_env.unwrap()))
+    if let Ok(adb_env) = std::env::var(ADBUTILS_ADB_PATH) {
+        Ok(PathBuf::from(adb_env))
     } else {
         match which(ADB_EXECUTE_FILE_NAME) {
             Ok(path) => Ok(path),
@@ -31,15 +28,22 @@ pub fn get_free_port() -> AdbResult<u16> {
 }
 
 pub fn start_adb_server() {
+    start_adb_server_result().expect("Failed to start adb server");
+}
+
+pub fn start_adb_server_result() -> AdbResult<()> {
     match adb_path() {
-        Err(_) => {
-            panic!("Adb Path Not Found")
-        }
+        Err(err) => Err(err),
         Ok(path) => {
-            Command::new(path)
-                .arg("start-server")
-                .output()
-                .expect("Failed to start adb server");
+            let output = Command::new(path).arg("start-server").output()?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(AdbError::command_failed(
+                    "adb start-server",
+                    String::from_utf8_lossy(&output.stderr).to_string(),
+                ))
+            }
         }
     }
 }

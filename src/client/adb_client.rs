@@ -1,4 +1,5 @@
 use crate::client::adb_device::AdbDevice;
+use crate::client::common;
 use std::fmt::Debug;
 
 #[cfg(feature = "tokio_async")]
@@ -9,7 +10,7 @@ use crate::errors::AdbResult;
 #[cfg(feature = "blocking")]
 use std::net::{TcpStream, ToSocketAddrs};
 
-const DEFAULT_ADB_ADDR: &'static str = "127.0.0.1:5037";
+const DEFAULT_ADB_ADDR: &str = "127.0.0.1:5037";
 
 pub struct AdbClient {
     pub stream: TcpStream,
@@ -24,15 +25,9 @@ impl AdbClient {
         T: ToSocketAddrs + Clone + Debug,
     {
         let mut devices = vec![];
-        if !lines.is_empty() {
-            lines.lines().into_iter().for_each(|line| {
-                let parts: Vec<&str> = line.split("\t").collect();
-                if !parts.is_empty() {
-                    let device = AdbDevice::new(parts[0], addr.clone());
-                    devices.push(device)
-                }
-            })
-        };
+        for entry in common::parse_device_list(lines) {
+            devices.push(AdbDevice::new(entry.serial, addr.clone()));
+        }
         Ok(devices)
     }
 }
@@ -50,17 +45,23 @@ pub mod async_impl {
     use tokio::net::{TcpStream, ToSocketAddrs};
 
     impl AdbClient {
+        pub async fn connect<T>(addr: T) -> AdbResult<Self>
+        where
+            T: ToSocketAddrs,
+        {
+            let stream = TcpStream::connect(addr).await?;
+            Ok(Self { stream })
+        }
+
         pub async fn default() -> Self {
-            let stream = TcpStream::connect(DEFAULT_ADB_ADDR).await.unwrap();
-            Self { stream }
+            Self::connect(DEFAULT_ADB_ADDR).await.unwrap()
         }
 
         pub async fn new<T>(addr: T) -> Self
         where
             T: ToSocketAddrs,
         {
-            let stream = TcpStream::connect(addr).await.unwrap();
-            Self { stream }
+            Self::connect(addr).await.unwrap()
         }
 
         /// 以迭代器的形式列出所有连接的 ADB 设备。
@@ -127,7 +128,7 @@ pub mod async_impl {
             }
             let command = format!("host:disconnect:{}", serial);
             self.stream.send_cmd_then_check_okay(&command).await?;
-            Ok(self.stream.read_response().await?)
+            self.stream.read_response().await
         }
 
         pub async fn list_devices(
@@ -135,7 +136,7 @@ pub mod async_impl {
         ) -> AdbResult<Vec<AdbDevice<impl ToSocketAddrs + Clone + Debug>>> {
             self.stream.send_cmd_then_check_okay("host:devices").await?;
             let resp = self.stream.read_response().await?;
-            Self::parse_device_list_lines(&resp, self.stream.peer_addr()?.clone())
+            Self::parse_device_list_lines(&resp, self.stream.peer_addr()?)
         }
     }
 }
@@ -156,12 +157,19 @@ pub mod blocking_impl {
     }
 
     impl AdbClient {
+        pub fn connect<T>(addr: T) -> AdbResult<Self>
+        where
+            T: ToSocketAddrs,
+        {
+            let stream = TcpStream::connect(addr)?;
+            Ok(Self { stream })
+        }
+
         pub fn new<T>(addr: T) -> Self
         where
             T: ToSocketAddrs,
         {
-            let stream = TcpStream::connect(addr).unwrap();
-            Self { stream }
+            Self::connect(addr).unwrap()
         }
 
         /// 以迭代器的形式列出所有连接的 ADB 设备。
@@ -180,7 +188,7 @@ pub mod blocking_impl {
         ) -> AdbResult<Vec<AdbDevice<impl ToSocketAddrs + Clone + Debug>>> {
             self.stream.send_cmd_then_check_okay("host:devices")?;
             let resp = self.stream.read_response()?;
-            Self::parse_device_list_lines(&resp, self.stream.peer_addr()?.clone())
+            Self::parse_device_list_lines(&resp, self.stream.peer_addr()?)
         }
 
         /// 获取 ADB 服务器的版本号。
@@ -232,7 +240,7 @@ pub mod blocking_impl {
             }
             let command = format!("host:disconnect:{}", serial);
             self.stream.send_cmd_then_check_okay(&command)?;
-            Ok(self.stream.read_response()?)
+            self.stream.read_response()
         }
     }
 }

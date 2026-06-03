@@ -26,75 +26,49 @@ radb = "0.1.7"
 
 ### 示例代码
 
-#### 获取设备列表
+#### 获取设备列表（blocking，默认）
 
-```rust
-use radb::AdbDevice;
-use radb::AdbClient;
+```rust,no_run
+# #[cfg(feature = "blocking")]
+# mod blocking_example {
+use radb::{AdbClient, AdbResult};
 
-fn main() {
-    let mut a = AdbClient::default();
-    let device = a.iter_devices().unwrap().next();
-    if let Some(mut device) = device{
-        println!("{:#?}",&device.serial);
-        let output = device.shell("echo \"Hello Android\" ");
-        println!("{}",output.unwrap());
+fn main() -> AdbResult<()> {
+    let mut client = AdbClient::connect("127.0.0.1:5037")?;
+    let mut devices = client.iter_devices()?;
+
+    if let Some(mut device) = devices.next() {
+        println!("{:#?}", &device.serial);
+        let output = device.shell(["echo", "Hello Android"])?;
+        println!("{}", output);
     }
+
+    Ok(())
 }
+# }
 ```
 
+#### 获取设备列表（Tokio async）
 
-#### 使用日志功能（logcat）
+```rust,no_run
+# #[cfg(feature = "tokio_async")]
+# mod async_example {
+use radb::{AdbClient, AdbResult};
 
-```rust
-#[cfg(test)]
-mod tests {
-    const TEST_DEVICE_SERIAL: &str = "3508719615000K5";
-    const TEST_PACKAGE: &str = "com.android.chrome";
-    const TEST_DIR: &str = "/data/local/tmp";
-    const DEFAULT_ADB_ADDR: &str = "127.0.0.1:5037";
+#[tokio::main]
+async fn main() -> AdbResult<()> {
+    let mut client = AdbClient::connect("127.0.0.1:5037").await?;
+    let devices = client.list_devices().await?;
 
-    #[cfg(feature = "blocking")]
-    mod device_blocking_tests {
-        use super::*;
-        use radb::beans::command::AdbCommand;
-        use std::path::PathBuf;
-
-        fn create_test_device() -> AdbDevice<&'static str> {
-            AdbDevice::new(TEST_DEVICE_SERIAL, DEFAULT_ADB_ADDR)
-        }
-
-        #[test]
-        fn test_device_creation() {
-            let device = create_test_device();
-            assert_eq!(device.serial, Some(TEST_DEVICE_SERIAL.to_string()));
-        }
+    for mut device in devices {
+        println!("{:#?}", &device.serial);
+        let output = device.shell(["echo", "Hello Android"]).await?;
+        println!("{}", output);
     }
 
-    #[test]
-    fn test_logcat() {
-        setup_test_environment();
-        let mut device = create_test_device();
-
-        // 测试 logcat
-        let logcat_result = device.logcat(true, None);
-        assert!(logcat_result.is_ok());
-
-        let mut logcat_iter = logcat_result.unwrap();
-        let mut count = 0;
-        for line in logcat_iter {
-            if line.is_ok() {
-                count += 1;
-                if count >= 5 {
-                    // 只读取前5行
-                    break;
-                }
-            }
-        }
-        println!("Read {} logcat lines", count);
-    }
-
+    Ok(())
 }
+# }
 ```
 
 
@@ -106,7 +80,7 @@ mod tests {
 | ✅ ADB Server 控制 | 获取版本、启动/关闭 server、连接/断开设备 |
 | ✅ Shell 执行 | 在设备上运行 shell 命令 |
 | ✅ 文件操作 | 推送文件到设备、从设备拉取文件、列出目录内容 |
-| ✅ 网络控制 | 设置 TCP/IP 模式、转发端口 |
+| ✅ 网络控制 | 设置 TCP/IP 模式、端口转发和反向端口转发 |
 | ✅ UI 自动化 | 模拟点击、滑动、按键事件 |
 | ✅ 应用管理 | 安装、卸载应用 |
 | ✅ 日志抓取 | 实时获取设备日志（logcat） |
@@ -127,6 +101,28 @@ mod tests {
 version = "0.1.7"
 features = ["tokio_async"]
 ```
+
+`blocking` 和 `tokio_async` 不能同时启用。两套 public API 共享同一套 ADB 命令构造、响应解析和 sync 文件传输核心；区别只在连接、读写和 `await` 适配层。`AdbClient::default()` 和 `AdbClient::new(...)` 仍保留兼容，但连接失败会 panic；新代码建议使用 `AdbClient::connect(...)`。
+
+## 🧪 测试
+
+默认测试不需要真机：
+
+```powershell
+cargo test --lib
+cargo test --test protocol_regressions
+cargo test --no-run
+```
+
+真机集成测试需要显式设置 `RADB_TEST_SERIAL`：
+
+```powershell
+$env:RADB_TEST_SERIAL="emulator-5554"
+cargo test --test blocking_integration
+cargo test --no-default-features --features tokio_async --test async_integration
+```
+
+未设置 `RADB_TEST_SERIAL` 时，真机测试会直接跳过。
 
 
 ## 📦 文档
