@@ -68,7 +68,7 @@ jobs:
       - name: Check tag matches Cargo.toml version
         shell: bash
         run: |
-          package_version="$(cargo pkgid | sed 's/.*@//')"
+          package_version="$(cargo pkgid | sed -E 's/.*[#@]//')"
           tag_version="${GITHUB_REF_NAME#v}"
 
           if [ "$package_version" != "$tag_version" ]; then
